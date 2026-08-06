@@ -40,6 +40,24 @@ python -m detector.cli batch tests/samples
 python -m detector.cli analyze mail.eml --online
 ```
 
+## Masaüstü GUI (opsiyonel)
+
+Komut satırı sevmiyorsan tıkla-kullan arayüz (CustomTkinter, koyu tema):
+
+```bash
+pip install customtkinter
+python run_gui.py
+```
+
+- **Dosya Seç (.eml)** ile e-posta yükle veya ham metni kutuya **yapıştır**.
+- Sonuç: renkli **verdict rozeti** (low→critical) + SPF/DKIM/DMARC + severity renkli
+  **gösterge kartları** (kanıt + açıklama).
+- **Online** anahtarı DNS/WHOIS/itibar sorgularını açar; analiz arka planda çalışır,
+  pencere donmaz.
+- **JSON Kaydet** ile raporu dosyaya yaz.
+
+Motor (`detector/`) GUI'den bağımsızdır; CLI ve GUI aynı `analyzer` API'sini kullanır.
+
 ## Verdict (risk seviyesi) — kimlik doğrulamaya duyarlı
 
 Puanlama artık **düz toplam değil**. Yanlış pozitifleri (meşru pazarlama
@@ -148,23 +166,7 @@ tests/            # pytest + örnek .eml dosyaları
 - Ek itibar kaynakları (PhishTank, Google Safe Browsing)
 - Redirect zinciri takibi (opt-in, sandboxed)
 
-## Masaüstü GUI (opsiyonel)
-
-Komut satırı yerine tıkla-kullan arayüz (CustomTkinter, koyu tema):
-
-```bash
-pip install customtkinter
-python run_gui.py
-```
-
-- **Dosya Seç (.eml)** ile e-posta yükle veya ham metni kutuya **yapıştır**.
-- Sonuç: renkli **verdict rozeti** (low→critical) + SPF/DKIM/DMARC + severity renkli
-  **gösterge kartları** (kanıt + açıklama).
-- **Online** anahtarı DNS/WHOIS/itibar sorgularını açar; analiz arka planda çalışır,
-  pencere donmaz.
-- **JSON Kaydet** ile raporu dosyaya yaz.
-
-Motor (`detector/`) GUI'den bağımsızdır; CLI ve GUI aynı `analyzer` API'sini kullanır.
+## Gelişmiş özellikler
 
 ### Gelişmiş kimlik doğrulama (Tier 1, `--online`)
 
@@ -200,3 +202,8 @@ Opsiyonel bağımlılıklar: `pip install oletools opencv-python-headless numpy`
 
 Deneme örneği: `python -m detector.cli analyze tests/samples/phish_tier2.eml`
 → 23 gösterge, **critical 100**.
+
+## Yazar
+
+**vuralogur** — <vuralogr@gmail.com>
+GitHub: https://github.com/vuralogur/phishingtool
