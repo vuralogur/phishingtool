@@ -1,0 +1,18 @@
+# format: brand,domain1;domain2;...
+# "brand" is matched as a lowercase substring of the email text.
+paypal,paypal.com
+microsoft,microsoft.com;live.com;outlook.com;office.com
+apple,apple.com;icloud.com
+google,google.com;gmail.com
+amazon,amazon.com;amazon.com.tr
+netflix,netflix.com
+instagram,instagram.com
+facebook,facebook.com;fb.com
+whatsapp,whatsapp.com
+linkedin,linkedin.com
+dhl,dhl.com
+garanti,garantibbva.com.tr
+akbank,akbank.com
+ziraat,ziraatbank.com.tr
+vakıfbank,vakifbank.com.tr
+turkcell,turkcell.com.tr

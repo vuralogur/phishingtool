@@ -1,0 +1,32 @@
+# Core analysis is pure stdlib — the tool runs offline with NONE of these.
+# These are OPTIONAL enhancements; code degrades gracefully if missing.
+
+# Better registrable-domain parsing (uses bundled offline snapshot):
+tldextract>=5.1
+
+# Prettier CLI report (plain-text fallback if absent):
+rich>=13.7
+
+# --- Online mode only (opt-in via --online) ---
+dnspython>=2.6      # live SPF / DMARC / MX lookups
+dkimpy>=1.1         # DKIM signature crypto verification (Tier 1)
+pyspf>=2.0.14       # live SPF evaluation (Tier 1)
+python-whois>=0.9   # domain registration age
+requests>=2.31      # reputation APIs (VirusTotal), needs API key
+
+# --- Tier 2: attack-vector deep analysis (all optional) ---
+# HTML forensics, HTML-smuggling, PDF active-content and deep URL checks use
+# ONLY the standard library. These extras unlock two more capabilities:
+oletools>=0.60            # static Office-macro analysis (auto-exec keyword flags)
+# QR ("quishing") decode — install ONE backend. OpenCV needs no native DLL on
+# Windows and is preferred; pyzbar is lighter but needs the zbar shared library:
+opencv-python-headless>=4.9
+numpy>=1.26
+# pyzbar>=0.1.9           # alternative QR backend (requires zbar system lib)
+# Pillow>=10.0            # image loading for the pyzbar backend
+
+# Desktop GUI (optional):
+customtkinter>=5.2
+
+# --- Development / tests only ---
+# pytest>=8.0            # run `python -m pytest -q` (19 tests)

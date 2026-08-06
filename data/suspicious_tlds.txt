@@ -1,0 +1,17 @@
+# One TLD per line (no dot). Free / commonly abused TLDs.
+zip
+mov
+xyz
+top
+tk
+ml
+ga
+cf
+gq
+work
+click
+link
+country
+kim
+loan
+rest

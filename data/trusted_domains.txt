@@ -1,0 +1,11 @@
+# Trusted sender allowlist (one registrable domain per line).
+#
+# A message is clamped to a LOW verdict ONLY when BOTH hold:
+#   * its From domain (registrable) is listed here, AND
+#   * it is authenticated (DMARC pass) - so the From cannot be spoofed.
+# Hard tradecraft (executable attachment, credential form, etc.) still overrides.
+#
+# Leave empty if you don't want an allowlist. Examples:
+# paypal.com
+# github.com
+# your-bank.com.tr

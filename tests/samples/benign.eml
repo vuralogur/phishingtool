@@ -1,0 +1,15 @@
+Received: from mail.example-news.com (mail.example-news.com [93.184.216.34]) by mx.example.com with ESMTPS id abc123 for <user@example.com>; Tue, 05 Aug 2025 09:00:01 +0000
+From: Weekly Digest <news@example-news.com>
+To: user@example.com
+Subject: Your weekly reading digest
+Date: Tue, 05 Aug 2025 09:00:00 +0000
+MIME-Version: 1.0
+Authentication-Results: mx.example.com; spf=pass smtp.mailfrom=example-news.com; dkim=pass header.d=example-news.com; dmarc=pass
+Content-Type: text/html; charset=utf-8
+
+<html><body>
+<p>Hi there, here are this week's articles.</p>
+<p><a href="https://example-news.com/articles/1">Read article one</a></p>
+<p><a href="https://example-news.com/articles/2">Read article two</a></p>
+<p>Thanks for reading.</p>
+</body></html>

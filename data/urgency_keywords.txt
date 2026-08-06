@@ -1,0 +1,21 @@
+# One lowercase keyword/phrase per line (TR + EN). Matched as substring.
+askıya alındı
+hesabınız kapat
+doğrulayın
+acilen
+son 24 saat
+hemen harekete
+şifrenizi güncelle
+güvenlik uyarısı
+yetkisiz giriş
+hesabınız askıya
+account suspended
+verify your account
+urgent
+immediately
+within 24 hours
+unusual activity
+password expired
+confirm your identity
+click here
+action required

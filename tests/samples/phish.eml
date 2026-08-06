@@ -1,0 +1,27 @@
+From: PayPal Security <security@paypal.com.verify-account.tk>
+Reply-To: collect@evil-mail.ru
+To: victim@example.com
+Subject: Hesabınız askıya alındı - acilen doğrulayın
+Date: Wed, 06 Aug 2025 03:12:00 +0000
+MIME-Version: 1.0
+Authentication-Results: mx.example.com; spf=fail smtp.mailfrom=verify-account.tk; dkim=none; dmarc=fail
+Content-Type: multipart/mixed; boundary="b1"
+
+--b1
+Content-Type: text/html; charset=utf-8
+
+<html><body>
+<p>Sayın müşteri, hesabınız askıya alındı. Son 24 saat içinde doğrulayın.</p>
+<p><a href="http://198.51.100.7/login">https://www.paypal.com/login</a></p>
+<p><a href="http://secure-verify.tk/paypal">Güvenli giriş için tıklayın</a></p>
+<p>Devam etmek için şifrenizi ve kart numaranızı girin.</p>
+</body></html>
+
+--b1
+Content-Type: application/octet-stream; name="fatura.pdf.exe"
+Content-Disposition: attachment; filename="fatura.pdf.exe"
+Content-Transfer-Encoding: base64
+
+TVqQAAMAAAAEAAAA//8AALgAAAAAAAAAQAAAAAAAAAA=
+
+--b1--
