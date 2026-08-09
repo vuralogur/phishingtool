@@ -28,5 +28,9 @@ numpy>=1.26
 # Desktop GUI (optional):
 customtkinter>=5.2
 
+# --- Benchmark harness (`bench` command) ---
+# Needs NOTHING extra: corpus loading, metrics (precision/recall/F1) and the
+# report are pure stdlib (csv + dataclasses).
+
 # --- Development / tests only ---
-# pytest>=8.0            # run `python -m pytest -q` (19 tests)
+# pytest>=8.0            # run `python -m pytest -q` (39 tests)

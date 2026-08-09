@@ -34,6 +34,70 @@ def _plain(result, source) -> str:
     return "\n".join(lines)
 
 
+def print_bench(bench, source=None, limit=10):
+    """Print benchmark metrics, the threshold sweep and the actual mistakes."""
+    print(_bench_plain(bench, source, limit))
+
+
+def _bench_plain(bench, source=None, limit=10) -> str:
+    m = bench.metrics()
+    lines = []
+    if source:
+        lines.append("Korpus: " + str(source))
+    lines.append("Etiketli dosya: " + str(len(bench.cases)) +
+                 "  ·  esik: verdict >= " + bench.threshold)
+    lines.append("")
+    lines.append("Karisiklik matrisi (" + bench.threshold + "):")
+    lines.append("                 tahmin: phish   tahmin: ham")
+    lines.append("  gercek phish   TP=" + str(m.tp).ljust(12) + "FN=" + str(m.fn))
+    lines.append("  gercek ham     FP=" + str(m.fp).ljust(12) + "TN=" + str(m.tn))
+    lines.append("")
+    lines.append("  precision " + _pct(m.precision) + "   (flagladiklarimizin ne kadari gercekten phishing)")
+    lines.append("  recall    " + _pct(m.recall) + "   (gercek phishinglerin ne kadarini yakaladik)")
+    lines.append("  F1        " + _pct(m.f1))
+    lines.append("  accuracy  " + _pct(m.accuracy))
+    lines.append("  FP orani  " + _pct(m.false_positive_rate) + "   (mesru mailin ne kadarini bosuna flagladik)")
+    lines.append("")
+    lines.append("Esik taramasi:")
+    lines.append("  esik       precision  recall     F1         FP")
+    for t, sm in bench.sweep():
+        lines.append("  " + t.ljust(11) + _pct(sm.precision).ljust(11) +
+                     _pct(sm.recall).ljust(11) + _pct(sm.f1).ljust(11) + str(sm.fp))
+
+    for kind, title in (("FP", "Yanlis pozitif (mesru ama flaglandi)"),
+                        ("FN", "Yanlis negatif (phishing ama kacti)")):
+        rows = bench.failures(kind)
+        if not rows:
+            continue
+        lines.append("")
+        lines.append(title + " — " + str(len(rows)) + " adet:")
+        for c in rows[:limit]:
+            lines.append("  " + c.file + "  [" + c.verdict + " " + str(c.score) + "]" +
+                         ("  sert: " + ", ".join(c.hard_ids) if c.hard_ids else "  (sert iz yok)"))
+        if len(rows) > limit:
+            lines.append("  ... +" + str(len(rows) - limit) + " tane daha")
+
+    for label, rows in (("Analiz edilemedi", [c.file + " — " + c.error for c in bench.errors]),
+                        ("Etiketli ama dosya yok", bench.missing),
+                        ("Etiketsiz .eml", bench.unlabeled)):
+        if rows:
+            lines.append("")
+            lines.append(label + " (" + str(len(rows)) + "): " + ", ".join(rows[:limit]) +
+                         (" ..." if len(rows) > limit else ""))
+    return "\n".join(lines)
+
+
+def _pct(x) -> str:
+    return format(x * 100, ".1f") + "%"
+
+
+def bench_to_json(bench, source=None) -> str:
+    d = bench.to_dict()
+    if source:
+        d = {"source": str(source), **d}
+    return json.dumps(d, ensure_ascii=False, indent=2)
+
+
 def print_report(result, source=None):
     """Pretty-print with rich; fall back to plain text if rich is missing."""
     try:

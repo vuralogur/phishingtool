@@ -10,7 +10,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import analyzer, report
+from . import analyzer, bench as _bench, report
 
 # Windows legacy consoles default to a regional codepage (e.g. cp1254) that
 # cannot encode emoji / some characters. Force UTF-8 so output never crashes.
@@ -68,6 +68,22 @@ def cmd_batch(args) -> int:
     return 0
 
 
+def cmd_bench(args) -> int:
+    """Score the detector against a labelled corpus (precision / recall / F1)."""
+    try:
+        result = _bench.run(args.dir, labels_path=args.labels,
+                            threshold=args.threshold, online=args.online,
+                            ctx=analyzer.build_context())
+    except _bench.BenchError as exc:
+        print("HATA: " + str(exc), file=sys.stderr)
+        return 2
+    if args.json:
+        print(report.bench_to_json(result, source=args.dir))
+    else:
+        report.print_bench(result, source=args.dir, limit=args.limit)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="detector",
@@ -87,6 +103,20 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--online", action="store_true")
     b.add_argument("--json", action="store_true")
     b.set_defaults(func=cmd_batch)
+
+    n = sub.add_parser(
+        "bench",
+        help="Etiketli korpusa karsi olc: precision / recall / F1 / hata listesi")
+    n.add_argument("dir", help="Korpus klasoru (labels.csv veya phish/ ham/ alt klasorleri)")
+    n.add_argument("--labels", help="Etiket CSV yolu (varsayilan: <dir>/labels.csv)")
+    n.add_argument("--threshold", default="medium",
+                   choices=tuple(_bench.VERDICT_RANK),
+                   help="Bu verdict ve ustu 'phishing' sayilir (varsayilan: medium)")
+    n.add_argument("--limit", type=int, default=10,
+                   help="Listelenecek hata ornegi sayisi (varsayilan: 10)")
+    n.add_argument("--online", action="store_true")
+    n.add_argument("--json", action="store_true")
+    n.set_defaults(func=cmd_bench)
     return p
 
 

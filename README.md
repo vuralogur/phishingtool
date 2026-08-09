@@ -36,6 +36,9 @@ cat mail.eml | python -m detector.cli analyze -
 # Bir klasördeki tüm .eml dosyaları (CSV özet)
 python -m detector.cli batch tests/samples
 
+# Etiketli korpusa karşı doğruluk ölçümü (precision / recall / F1)
+python -m detector.cli bench corpus/
+
 # Ağ sorgularını aç (SPF/DMARC DNS, WHOIS, itibar API — opt-in)
 python -m detector.cli analyze mail.eml --online
 ```
@@ -57,6 +60,63 @@ python run_gui.py
 - **JSON Kaydet** ile raporu dosyaya yaz.
 
 Motor (`detector/`) GUI'den bağımsızdır; CLI ve GUI aynı `analyzer` API'sini kullanır.
+
+## Doğruluk ölçümü — `bench`
+
+Skorlama ayarı yaptığında "daha iyi mi oldu?" sorusunun tek dürüst cevabı sayıdır.
+`bench` komutu etiketli bir korpusu baştan sona analiz edip **precision / recall /
+F1** üretir ve **hangi dosyada yanıldığını** listeler.
+
+```bash
+python -m detector.cli bench corpus/                      # varsayılan eşik: medium
+python -m detector.cli bench corpus/ --threshold high     # daha katı sayım
+python -m detector.cli bench corpus/ --labels etiket.csv --json
+```
+
+Etiketler iki biçimden biriyle verilir:
+
+```
+corpus/labels.csv          corpus/
+file,label                   phish/kotu1.eml
+mail1.eml,phish              phish/kotu2.eml
+mail2.eml,ham                ham/iyi1.eml
+```
+
+(`phish` yerine `phishing/spam/malicious/1`, `ham` yerine `benign/legit/clean/0`
+de yazılabilir. Başlık satırı ve `#` yorumları atlanır.)
+
+Çıktı:
+
+```
+Karisiklik matrisi (medium):
+                 tahmin: phish   tahmin: ham
+  gercek phish   TP=2           FN=0
+  gercek ham     FP=0           TN=1
+
+  precision 100.0%   recall 100.0%   F1 100.0%   FP orani 0.0%
+
+Esik taramasi:
+  esik       precision  recall     F1         FP
+  medium     100.0%     100.0%     100.0%     0
+  high       100.0%     100.0%     100.0%     0
+  critical   100.0%     100.0%     100.0%     0
+```
+
+Üç şey kazandırır:
+
+- **Eşik taraması** — aynı koşuyu `medium/high/critical` için puanlar; eşiği
+  tahminle değil ölçümle seçersin.
+- **Hata listesi** — her yanlış pozitif/negatif için dosya adı, verdict, skor ve
+  **tetikleyen sert göstergeler**; düzeltilecek kuralı doğrudan gösterir.
+- **Regresyon koruması** — ağırlık değiştirdikten sonra tekrar çalıştır; F1
+  düştüyse değişiklik kötüdür.
+
+`--online` burada da opt-in. Eksik dosyalar, etiketsiz `.eml`'ler ve
+ayrıştırılamayan örnekler ayrı ayrı raporlanır (sessizce yutulmaz).
+Ek bağımlılık gerekmez — ölçüm de rapor da saf standart kütüphane.
+
+> Korpusundaki gerçek e-postaları **repo'ya commit'leme** — `.gitignore` zaten
+> `corpus/**/*.eml` ve `corpus/labels.csv`'yi hariç tutar.
 
 ## Verdict (risk seviyesi) — kimlik doğrulamaya duyarlı
 
@@ -142,21 +202,23 @@ Sözlükler `data/` altında düz metin — kod değiştirmeden genişlet:
 ## Testler
 
 ```bash
-python -m pytest -q
+python -m pytest -q      # 39 test
 ```
 
 ## Mimari
 
 ```
 detector/
-  cli.py          # komut satırı (analyze / batch)
+  cli.py          # komut satırı (analyze / batch / bench)
   analyzer.py     # orkestratör: parse -> tüm kontroller -> skor
   parser.py       # .eml / ham metin -> normalize ParsedEmail
   checks/         # headers, urls, content, attachments
   scoring.py      # ağırlıklı, açıklanabilir skor -> verdict
+  bench.py        # etiketli korpus -> precision / recall / F1 / hata listesi
   report.py       # rich tablo / düz metin / JSON çıktı
   reputation.py   # opsiyonel VirusTotal (online)
 data/             # brands / suspicious_tlds / urgency sözlükleri
+corpus/           # (opsiyonel, yerel) bench korpusu — gerçek mailler commit'lenmez
 tests/            # pytest + örnek .eml dosyaları
 ```
 

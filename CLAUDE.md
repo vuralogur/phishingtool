@@ -31,10 +31,12 @@ python -m detector.cli analyze mail.eml
 python -m detector.cli analyze mail.eml --online --json
 # klasör
 python -m detector.cli batch klasor/
+# etiketli korpusa karşı ölçüm (precision/recall/F1 + hata listesi)
+python -m detector.cli bench corpus/ [--threshold high] [--json]
 # GUI
 python run_gui.py
 # testler
-python -m pytest -q      # 19 test
+python -m pytest -q      # 39 test
 ```
 
 ## Mimari
@@ -49,7 +51,12 @@ python -m pytest -q      # 19 test
 - `detector/checks/*.py` — her modül `run(email, online=False, ctx=None) -> list[Indicator]`.
 - `detector/indicators.py` — `Indicator(id, category, severity, weight, evidence, explanation)`.
 - `detector/scoring.py` — güven-farkındalıklı skor + verdict.
-- `detector/report.py` — rich tablo (yoksa düz metin), `to_json`.
+- `detector/bench.py` — etiketli korpus → `Case`/`Metrics`/`BenchResult`;
+  precision/recall/F1/FP-oranı, eşik taraması (`medium|high|critical`), FP/FN
+  listesi (her biri sert gösterge id'leriyle). Etiket kaynağı: `labels.csv`
+  (`file,label`) **veya** `phish/` + `ham/` alt klasörleri.
+- `detector/report.py` — rich tablo (yoksa düz metin), `to_json`;
+  `print_bench` / `bench_to_json` benchmark çıktısı.
 
 ### Check modülleri
 
@@ -92,11 +99,17 @@ veya From adresinde** geçip domain markanın resmi domaini değilse ateşler
 - `suspicious_tlds.txt`, `urgency_keywords.txt` (TR+EN)
 - `trusted_domains.txt` — güvenilen gönderen allowlist'i
 
+`corpus/` — `bench` korpusu (yerel). Gerçek mailler git'te **yok**: `.gitignore`
+`corpus/**/*.eml`, `corpus/**/*.msg`, `corpus/labels.csv` hariç tutar; sadece
+`corpus/README.md` + `labels.example.csv` takip edilir.
+
 ## Tier durumu
 
 - **Tier 1** (kripto auth) — **DONE**
 - **Tier 2** (saldırı vektörleri: html_forensics, attachment_deep, qr, url_deep) — **DONE**
-- **Tier 3** (ML sınıflandırıcı + precision/recall benchmark + Ollama yerel LLM) — PENDING
+- **Tier 3** — precision/recall **benchmark harness DONE** (`detector/bench.py`,
+  `bench` komutu). ML sınıflandırıcı + Ollama yerel LLM hâlâ PENDING; ölçüm artık
+  var, bir sonraki değişiklik F1 ile doğrulanabilir.
 - **Tier 4** (threat intel API + YAML config + pyproject/CI + GUI önizleme + PDF rapor) — PENDING
 
 Örnek: `python -m detector.cli analyze tests/samples/phish_tier2.eml` → critical 100.

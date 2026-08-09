@@ -1,0 +1,6 @@
+file,label
+# Bu dosyayi labels.csv olarak kopyala ve kendi orneklerinle doldur.
+# Yol, corpus/ klasorune goredir. Alt klasor de yazilabilir: arsiv/mail9.eml
+ornek1.eml,phish
+ornek2.eml,ham
+ornek3.eml,ham

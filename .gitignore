@@ -23,6 +23,11 @@ ENV/
 # Local secrets / config (e.g. VT_API_KEY)
 .env
 
+# Local benchmark corpus: real mail (and its labels) stays on this machine.
+corpus/**/*.eml
+corpus/**/*.msg
+corpus/labels.csv
+
 # OS / editor
 .DS_Store
 Thumbs.db
