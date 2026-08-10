@@ -50,3 +50,17 @@ def test_pyproject_declares_console_script_and_package_data():
     # The core must stay dependency-free; extras carry everything optional.
     assert cfg["project"]["dependencies"] == []
     assert set(cfg["project"]["optional-dependencies"]) >= {"cli", "online", "deep", "dev"}
+
+
+def test_license_is_declared_and_shipped():
+    assert cfg_license() == "MIT"
+    text = (ROOT / "LICENSE").read_text(encoding="utf-8")
+    assert text.startswith("MIT License")
+    assert "Copyright (c) 2026 vuralogr" in text
+
+
+def cfg_license() -> str:
+    with open(ROOT / "pyproject.toml", "rb") as fh:
+        cfg = tomllib.load(fh)
+    assert cfg["project"]["license-files"] == ["LICENSE"]
+    return cfg["project"]["license"]

@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/vuralogur/phishingtool/actions/workflows/ci.yml/badge.svg)](https://github.com/vuralogur/phishingtool/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 Bir e-postayı (`.eml` dosyası, ham metin veya stdin) alıp **phishing göstergelerini**
 statik olarak analiz eden, **açıklanabilir bir risk skoru** veren komut satırı aracı.
@@ -362,6 +363,11 @@ Opsiyonel bağımlılıklar: `pip install oletools opencv-python-headless numpy`
 
 Deneme örneği: `python -m detector.cli analyze tests/samples/phish_tier2.eml`
 → 23 gösterge, **critical 100**.
+
+## Lisans
+
+[MIT](LICENSE) — kullan, değiştir, dağıt; telif ve lisans notunu koru.
+Yazılım "olduğu gibi" sunulur, garanti verilmez.
 
 ## Yazar
 
