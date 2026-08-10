@@ -1,8 +1,11 @@
 """Command-line entrypoint.
 
-  python -m detector.cli analyze <file.eml | ->  [--online] [--json] [--iocs]
-  python -m detector.cli batch   <dir>           [--online] [--json] [--iocs]
-  python -m detector.cli bench   <corpus dir>    [--threshold high] [--json]
+  phishingtool analyze <file.eml | ->  [--online] [--json] [--iocs]
+  phishingtool batch   <dir>           [--online] [--json] [--iocs]
+  phishingtool bench   <corpus dir>    [--threshold high] [--json]
+
+Installed as the `phishingtool` console script; `python -m detector.cli ...`
+works identically from a source checkout.
 """
 from __future__ import annotations
 import argparse
@@ -23,7 +26,7 @@ for _stream in (sys.stdout, sys.stderr):
 
 
 def cmd_analyze(args) -> int:
-    ctx = analyzer.build_context()
+    ctx = analyzer.build_context(args.data_dir)
     src = args.input
     # Parse first: --iocs needs the ParsedEmail, not just the score.
     if src == "-":
@@ -47,7 +50,7 @@ def cmd_analyze(args) -> int:
 
 
 def cmd_batch(args) -> int:
-    ctx = analyzer.build_context()
+    ctx = analyzer.build_context(args.data_dir)
     d = Path(args.dir)
     if not d.is_dir():
         print("HATA: klasor yok: " + args.dir, file=sys.stderr)
@@ -100,7 +103,7 @@ def cmd_bench(args) -> int:
     try:
         result = _bench.run(args.dir, labels_path=args.labels,
                             threshold=args.threshold, online=args.online,
-                            ctx=analyzer.build_context())
+                            ctx=analyzer.build_context(args.data_dir))
     except _bench.BenchError as exc:
         print("HATA: " + str(exc), file=sys.stderr)
         return 2
@@ -113,12 +116,19 @@ def cmd_bench(args) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="detector",
+        prog="phishingtool",
         description="Phishing e-posta tespit/analiz araci (savunma, statik, offline-first).",
     )
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    a = sub.add_parser("analyze", help="Tek bir .eml dosyasini veya stdin'i analiz et")
+    # Shared by every subcommand: where the dictionaries are read from.
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--data-dir",
+                        help="Sozluk klasoru (varsayilan: paket ici detector/data; "
+                             "PHISHINGTOOL_DATA ortam degiskeni de gecerli)")
+
+    a = sub.add_parser("analyze", parents=[common],
+                       help="Tek bir .eml dosyasini veya stdin'i analiz et")
     a.add_argument("input", help=".eml yolu veya '-' (stdin ham e-posta)")
     a.add_argument("--online", action="store_true",
                    help="DNS/WHOIS/itibar sorgularini etkinlestir (ag kullanir)")
@@ -128,7 +138,8 @@ def build_parser() -> argparse.ArgumentParser:
                         "(metinde defanged, --json ile ham)")
     a.set_defaults(func=cmd_analyze)
 
-    b = sub.add_parser("batch", help="Bir klasordeki tum .eml dosyalarini tara")
+    b = sub.add_parser("batch", parents=[common],
+                       help="Bir klasordeki tum .eml dosyalarini tara")
     b.add_argument("dir", help="Klasor yolu")
     b.add_argument("--online", action="store_true")
     b.add_argument("--json", action="store_true")
@@ -137,7 +148,7 @@ def build_parser() -> argparse.ArgumentParser:
     b.set_defaults(func=cmd_batch)
 
     n = sub.add_parser(
-        "bench",
+        "bench", parents=[common],
         help="Etiketli korpusa karsi olc: precision / recall / F1 / hata listesi")
     n.add_argument("dir", help="Korpus klasoru (labels.csv veya phish/ ham/ alt klasorleri)")
     n.add_argument("--labels", help="Etiket CSV yolu (varsayilan: <dir>/labels.csv)")

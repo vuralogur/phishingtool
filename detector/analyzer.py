@@ -1,5 +1,6 @@
 """Orchestrator: parse -> run all checks -> score. Reused by CLI and any UI."""
 from __future__ import annotations
+import os
 from pathlib import Path
 
 from . import parser as _parser
@@ -11,7 +12,11 @@ from .checks import (
 from .scoring import score, auth_level
 from .util import registered_domain
 
-_DATA = Path(__file__).resolve().parent.parent / "data"
+# Dictionaries ship inside the package so `pip install phishingtool` works from
+# any directory. Point PHISHINGTOOL_DATA (or --data-dir) at your own copy to
+# override them without touching the installed files.
+_DATA = Path(__file__).resolve().parent / "data"
+_DATA_ENV = "PHISHINGTOOL_DATA"
 
 
 def _load_brands(path: Path) -> dict:
@@ -41,8 +46,16 @@ def _load_set(path: Path) -> set:
     return s
 
 
+def resolve_data_dir(data_dir=None) -> Path:
+    """Where the dictionaries live: argument > PHISHINGTOOL_DATA > bundled."""
+    if data_dir:
+        return Path(data_dir)
+    env = os.environ.get(_DATA_ENV, "").strip()
+    return Path(env) if env else _DATA
+
+
 def build_context(data_dir=None) -> dict:
-    d = Path(data_dir) if data_dir else _DATA
+    d = resolve_data_dir(data_dir)
     return {
         "brands": _load_brands(d / "brands.txt"),
         "suspicious_tlds": _load_set(d / "suspicious_tlds.txt"),

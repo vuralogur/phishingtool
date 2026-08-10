@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "phishingtool"
+version = "0.4.0"
+description = "Savunma amacli phishing e-posta tespit/analiz araci (statik, offline-first)"
+readme = "README.md"
+requires-python = ">=3.11"
+# license: repoda henuz LICENSE dosyasi yok - secilince buraya eklenecek.
+authors = [{ name = "vuralogr", email = "vuralogr@gmail.com" }]
+keywords = ["phishing", "email", "security", "dfir", "blue-team", "eml"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Communications :: Email",
+    "Topic :: Security",
+]
+# Core analysis is pure stdlib on purpose: no runtime dependencies.
+dependencies = []
+
+[project.optional-dependencies]
+# Prettier report + correct registrable-domain parsing.
+cli = ["rich>=13.7", "tldextract>=5.1"]
+# --online mode: live SPF/DKIM/DMARC, WHOIS, reputation APIs.
+online = ["dnspython>=2.6", "dkimpy>=1.1", "pyspf>=2.0.14",
+          "python-whois>=0.9", "requests>=2.31"]
+# Tier 2 extras: Office-macro analysis and QR ("quishing") decoding.
+deep = ["oletools>=0.60", "opencv-python-headless>=4.9", "numpy>=1.26"]
+gui = ["customtkinter>=5.2"]
+dev = ["pytest>=8.0"]
+
+[project.urls]
+Homepage = "https://github.com/vuralogur/phishingtool"
+Issues = "https://github.com/vuralogur/phishingtool/issues"
+
+[project.scripts]
+phishingtool = "detector.cli:main"
+
+[tool.setuptools]
+packages = ["detector", "detector.checks", "gui"]
+
+[tool.setuptools.package-data]
+# The dictionaries travel with the package so the console script finds them
+# from any working directory (override with --data-dir / PHISHINGTOOL_DATA).
+detector = ["data/*.txt"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

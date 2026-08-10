@@ -1,5 +1,14 @@
 # Core analysis is pure stdlib — the tool runs offline with NONE of these.
 # These are OPTIONAL enhancements; code degrades gracefully if missing.
+#
+# Packaging lives in pyproject.toml. This file installs EVERY optional extra at
+# once; to pick and choose (and to get the `phishingtool` console script), use:
+#   pip install -e .            # core only, zero dependencies
+#   pip install -e ".[cli]"     # rich + tldextract
+#   pip install -e ".[online]"  # --online: dnspython, dkimpy, pyspf, whois, requests
+#   pip install -e ".[deep]"    # Tier 2: oletools, OpenCV QR
+#   pip install -e ".[gui]"     # customtkinter
+#   pip install -e ".[dev]"     # pytest
 
 # Better registrable-domain parsing (uses bundled offline snapshot):
 tldextract>=5.1
@@ -35,4 +44,5 @@ customtkinter>=5.2
 # (csv + dataclasses + hashlib + ipaddress).
 
 # --- Development / tests only ---
-# pytest>=8.0            # run `python -m pytest -q` (57 tests)
+# pytest>=8.0            # run `python -m pytest -q` (62 tests); CI runs the same
+#                        # suite on 3.11-3.14 (Linux) and 3.12 (Windows)

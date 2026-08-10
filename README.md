@@ -1,5 +1,8 @@
 # Phishing E-posta Tespit / Analiz Aracı (savunma)
 
+[![CI](https://github.com/vuralogur/phishingtool/actions/workflows/ci.yml/badge.svg)](https://github.com/vuralogur/phishingtool/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
+
 Bir e-postayı (`.eml` dosyası, ham metin veya stdin) alıp **phishing göstergelerini**
 statik olarak analiz eden, **açıklanabilir bir risk skoru** veren komut satırı aracı.
 Kara kutu değil: her puan tetiklenen bir kurala bağlıdır ve kanıtıyla listelenir.
@@ -10,21 +13,34 @@ Kara kutu değil: her puan tetiklenen bir kurala bağlıdır ve kanıtıyla list
 ## Kurulum
 
 ```bash
-# Çekirdek analiz sadece Python standart kütüphanesini kullanır (kurulum gerekmez).
-# Opsiyonel iyileştirmeler:
-pip install -r requirements.txt
+# Paket olarak kur -> her dizinden çalışan `phishingtool` komutu
+pip install -e .
+
+# İhtiyacına göre opsiyonel gruplar (hiçbiri şart değil):
+pip install -e ".[cli]"     # rich tablo + tldextract
+pip install -e ".[online]"  # --online: canlı SPF/DKIM/DMARC, WHOIS, itibar
+pip install -e ".[deep]"    # Tier 2: oletools makro, OpenCV QR
+pip install -e ".[gui]"     # masaüstü arayüz
+pip install -e ".[dev]"     # pytest
 ```
+
+Kurulum bile şart değil: çekirdek analiz **saf standart kütüphane**, depoyu
+klonlayıp `python -m detector.cli ...` diye çalıştırabilirsin.
 
 - `rich` → renkli tablo çıktısı (yoksa düz metin)
 - `tldextract` → doğru registrable-domain (yoksa naif son-iki-etiket)
 - `dnspython` / `python-whois` / `requests` → yalnızca `--online` modunda
 
-Python 3.11+ (3.14'te test edildi).
+Python 3.11+ (CI: 3.11 / 3.12 / 3.13 / 3.14, Linux + Windows).
 
 ## Kullanım
 
+Kurulduysa `phishingtool ...`, kurulmadıysa `python -m detector.cli ...` — ikisi
+aynı komut:
+
 ```bash
 # Tek dosya
+phishingtool analyze tests/samples/phish.eml
 python -m detector.cli analyze tests/samples/phish.eml
 
 # JSON çıktı (otomasyon için)
@@ -243,11 +259,24 @@ tracker'ı) `anchor_href_mismatch`, `open_redirect`, `random_host` ateşlenmez.
 
 ## Özelleştirme
 
-Sözlükler `data/` altında düz metin — kod değiştirmeden genişlet:
+Sözlükler `detector/data/` altında düz metin — kod değiştirmeden genişlet:
 
-- `data/brands.txt` — `marka,domain1;domain2` (taklit tespiti)
-- `data/suspicious_tlds.txt` — satır başına bir TLD
-- `data/urgency_keywords.txt` — satır başına bir anahtar kelime/ifade (TR + EN)
+- `detector/data/brands.txt` — `marka,domain1;domain2` (taklit tespiti)
+- `detector/data/suspicious_tlds.txt` — satır başına bir TLD
+- `detector/data/urgency_keywords.txt` — satır başına bir kelime/ifade (TR + EN)
+- `detector/data/trusted_domains.txt` — güvenilen gönderen allowlist'i
+
+Sözlükler **paketin içinde** taşınır; böylece `phishingtool` komutu hangi
+dizinden çalıştırılırsa çalıştırılsın onları bulur. Kurulu dosyalara dokunmadan
+kendi kopyanı kullanmak için:
+
+```bash
+phishingtool analyze mail.eml --data-dir ./kendi-sozluklerim
+export PHISHINGTOOL_DATA=/opt/phishingtool-data   # kalıcı alternatif
+```
+
+Öncelik sırası: `--data-dir` > `PHISHINGTOOL_DATA` > paket içi varsayılan.
+Eksik dosya hata değil — o sözlük boş kabul edilir.
 
 ## Gizlilik ve güvenlik
 
@@ -262,8 +291,13 @@ Sözlükler `data/` altında düz metin — kod değiştirmeden genişlet:
 ## Testler
 
 ```bash
-python -m pytest -q      # 57 test
+python -m pytest -q      # 62 test
 ```
+
+Her push ve PR'da GitHub Actions bunları çalıştırır: **opsiyonel bağımlılık
+kurulmadan** Python 3.11/3.12/3.13/3.14 (Linux) + 3.12 (Windows) — yeşil kalması
+çekirdeğin gerçekten saf stdlib olduğunun kanıtı — artı extras'lı ikinci bir tur
+(`rich`, `tldextract`, `oletools`, OpenCV) ve `phishingtool` komutunun duman testi.
 
 ## Mimari
 
@@ -278,9 +312,12 @@ detector/
   bench.py        # etiketli korpus -> precision / recall / F1 / hata listesi
   report.py       # rich tablo / düz metin / JSON çıktı
   reputation.py   # opsiyonel VirusTotal (online)
-data/             # brands / suspicious_tlds / urgency sözlükleri
+  data/           # sözlükler (paketle birlikte kurulur)
+gui/              # CustomTkinter masaüstü arayüz
 corpus/           # (opsiyonel, yerel) bench korpusu — gerçek mailler commit'lenmez
 tests/            # pytest + örnek .eml dosyaları
+pyproject.toml    # paket metadata + `phishingtool` konsol komutu
+.github/workflows/ci.yml   # pytest matrisi (Linux/Windows, 3.11–3.14)
 ```
 
 ## Yol haritası (opsiyonel)

@@ -26,7 +26,9 @@ risk skoru üretir (`low` / `medium` / `high` / `critical`). Türkçe arayüz/ç
 ## Çalıştırma
 
 ```bash
-# tek dosya
+# kurulum (opsiyonel; `phishingtool` konsol komutunu verir)
+pip install -e ".[dev]"          # extras: cli / online / deep / gui / dev
+# tek dosya  (`phishingtool analyze ...` ile birebir aynı)
 python -m detector.cli analyze mail.eml
 python -m detector.cli analyze mail.eml --online --json
 # IOC listesi (blocklist/SIEM): metin defanged, --json/CSV ham
@@ -38,7 +40,7 @@ python -m detector.cli bench corpus/ [--threshold high] [--json]
 # GUI
 python run_gui.py
 # testler
-python -m pytest -q      # 57 test
+python -m pytest -q      # 62 test (CI: 3.11–3.14 Linux + 3.12 Windows)
 ```
 
 ## Mimari
@@ -97,8 +99,8 @@ Düz toplam DEĞİL. `detector/scoring.py`:
    22–44 high · 45+ critical`. Yalnız yumuşak sinyal (sert=0) → **daima low**.
 4. **First-party bastırma** — link gönderenin domainine aitse (kendi tracker'ı)
    `anchor_href_mismatch`/`open_redirect`/`random_host` ateşlenmez.
-5. **Allowlist** — `data/trusted_domains.txt`: DMARC-pass + listedeki domain, sert
-   iz yoksa **low**'a sabitlenir.
+5. **Allowlist** — `detector/data/trusted_domains.txt`: DMARC-pass + listedeki
+   domain, sert iz yoksa **low**'a sabitlenir.
 
 Bu hesap gizli değil: her rapor (düz metin, rich, GUI, `--json`) iki satır olarak
 gösterir — `Skor kırılımı: sert 34 (3 gösterge) + yumuşak 18×0.3=5.4 (4 gösterge)
@@ -108,7 +110,11 @@ gösterir — `Skor kırılımı: sert 34 (3 gösterge) + yumuşak 18×0.3=5.4 (
 veya From adresinde** geçip domain markanın resmi domaini değilse ateşler
 (kelime-sınırlı). Gövdede marka *anmak* tetiklemez — meşru mail sürekli marka anar.
 
-## Veri dosyaları (`data/`, kullanıcı düzenleyebilir)
+## Veri dosyaları (`detector/data/`, kullanıcı düzenleyebilir)
+
+Sözlükler **paket içinde** (wheel'e girer, `phishingtool` her dizinden bulur).
+Çözümleme sırası `analyzer.resolve_data_dir()`: `--data-dir` argümanı >
+`PHISHINGTOOL_DATA` ortam değişkeni > paket içi varsayılan. Eksik dosya = boş küme.
 
 - `brands.txt` — `marka,domain1;domain2`
 - `suspicious_tlds.txt`, `urgency_keywords.txt` (TR+EN)
@@ -125,7 +131,10 @@ veya From adresinde** geçip domain markanın resmi domaini değilse ateşler
 - **Tier 3** — precision/recall **benchmark harness DONE** (`detector/bench.py`,
   `bench` komutu). ML sınıflandırıcı + Ollama yerel LLM hâlâ PENDING; ölçüm artık
   var, bir sonraki değişiklik F1 ile doğrulanabilir.
-- **Tier 4** (threat intel API + YAML config + pyproject/CI + GUI önizleme + PDF rapor) — PENDING
+- **Tier 4** — **pyproject + `phishingtool` konsol komutu + GitHub Actions CI DONE**
+  (`pyproject.toml`, `.github/workflows/ci.yml`; sözlükler pakete taşındı,
+  `--data-dir`/`PHISHINGTOOL_DATA` override'ı eklendi). Threat intel API,
+  YAML/TOML config, GUI önizleme, PDF rapor hâlâ PENDING.
 
 Örnek: `python -m detector.cli analyze tests/samples/phish_tier2.eml` → critical 100.
 
