@@ -36,7 +36,7 @@ python -m detector.cli bench corpus/ [--threshold high] [--json]
 # GUI
 python run_gui.py
 # testler
-python -m pytest -q      # 39 test
+python -m pytest -q      # 44 test
 ```
 
 ## Mimari
@@ -50,12 +50,16 @@ python -m pytest -q      # 39 test
   check'lere (ctx içinde) hem `score()`'a geçirir.
 - `detector/checks/*.py` — her modül `run(email, online=False, ctx=None) -> list[Indicator]`.
 - `detector/indicators.py` — `Indicator(id, category, severity, weight, evidence, explanation)`.
-- `detector/scoring.py` — güven-farkındalıklı skor + verdict.
+- `detector/scoring.py` — güven-farkındalıklı skor + verdict. `Result.breakdown`
+  (`Breakdown`): sert/yumuşak alt toplam, uygulanan çarpan, sayımlar, `trusted`,
+  `capped` ve verdict'i belirleyen kural anahtarı `reason` (`hard_critical|
+  hard_high|hard_medium|soft_pileup|allowlist|weak_hard_evidence|no_hard_evidence`).
 - `detector/bench.py` — etiketli korpus → `Case`/`Metrics`/`BenchResult`;
   precision/recall/F1/FP-oranı, eşik taraması (`medium|high|critical`), FP/FN
   listesi (her biri sert gösterge id'leriyle). Etiket kaynağı: `labels.csv`
   (`file,label`) **veya** `phish/` + `ham/` alt klasörleri.
 - `detector/report.py` — rich tablo (yoksa düz metin), `to_json`;
+  `breakdown_lines()` skor kırılımının iki Türkçe satırı (CLI + GUI ortak kullanır);
   `print_bench` / `bench_to_json` benchmark çıktısı.
 
 ### Check modülleri
@@ -88,6 +92,10 @@ Düz toplam DEĞİL. `detector/scoring.py`:
    `anchor_href_mismatch`/`open_redirect`/`random_host` ateşlenmez.
 5. **Allowlist** — `data/trusted_domains.txt`: DMARC-pass + listedeki domain, sert
    iz yoksa **low**'a sabitlenir.
+
+Bu hesap gizli değil: her rapor (düz metin, rich, GUI, `--json`) iki satır olarak
+gösterir — `Skor kırılımı: sert 34 (3 gösterge) + yumuşak 18×0.3=5.4 (4 gösterge)
+= 39/100` ve `Verdict nedeni: sert toplam ≥ 22 → high · auth=pass`.
 
 `brand_impersonation` **kimlik-temelli**: marka adı yalnızca **From display-name
 veya From adresinde** geçip domain markanın resmi domaini değilse ateşler

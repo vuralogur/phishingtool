@@ -251,6 +251,67 @@ def test_brand_mention_in_body_is_not_impersonation():
     assert "brand_impersonation" not in ids
 
 
+def test_breakdown_splits_hard_and_soft():
+    from detector.scoring import score
+    from detector.indicators import Indicator
+    r = score([
+        Indicator("credential_request", "content", "high", 20, "e", "x"),  # hard
+        Indicator("urgency_language", "content", "medium", 12, "e", "x"),  # soft
+    ], {"spf": "pass", "dkim": "pass", "dmarc": "pass"})
+    b = r.breakdown
+    assert (b.hard, b.hard_count) == (20, 1)
+    assert (b.soft_raw, b.soft_count) == (12, 1)
+    assert b.multiplier == 0.3 and round(b.soft, 1) == 3.6
+    assert r.score == 24          # 20 + 12*0.3 = 23.6 -> 24
+    assert b.auth_level == "pass" and b.reason == "hard_medium"
+
+
+def test_breakdown_reason_for_soft_only_mail():
+    from detector.scoring import score
+    from detector.indicators import Indicator
+    r = score([
+        Indicator("urgency_language", "content", "medium", 12, "e", "x"),
+        Indicator("url_shortener", "url", "medium", 8, "e", "x"),
+    ], {"spf": "none", "dkim": "none", "dmarc": "none"})
+    assert r.verdict == "low"
+    assert r.breakdown.reason == "no_hard_evidence"
+    assert r.breakdown.hard == 0 and r.breakdown.multiplier == 1.0
+
+
+def test_breakdown_reason_allowlisted_sender():
+    from detector.scoring import score
+    from detector.indicators import Indicator
+    r = score([Indicator("open_redirect", "url", "medium", 10, "e", "x")],
+              {"spf": "pass", "dkim": "pass", "dmarc": "pass"},
+              from_rdom="brand.com.tr", allowlist={"brand.com.tr"})
+    assert r.verdict == "low"
+    assert r.breakdown.trusted is True and r.breakdown.reason == "allowlist"
+
+
+def test_breakdown_flags_capped_score():
+    from detector.scoring import score
+    from detector.indicators import Indicator
+    inds = [Indicator("dangerous_attachment", "attachment", "critical", 40, "e", "x")
+            for _ in range(4)]
+    r = score(inds, {"spf": "fail", "dkim": "fail", "dmarc": "fail"})
+    assert r.score == 100 and r.verdict == "critical"
+    assert r.breakdown.capped is True and r.breakdown.hard == 160
+
+
+def test_breakdown_reaches_report_and_json():
+    import json
+    from detector import report
+    r = analyzer.analyze_file(SAMPLES / "phish.eml")
+    lines = report.breakdown_lines(r)
+    assert len(lines) == 2
+    assert lines[0].startswith("Skor kırılımı: sert ")
+    assert "Verdict nedeni:" in lines[1]
+    assert "Skor kırılımı" in report._plain(r, "phish.eml")
+    d = json.loads(report.to_json(r))
+    assert d["breakdown"]["hard_count"] >= 1
+    assert d["breakdown"]["reason"] in ("hard_high", "hard_critical")
+
+
 def test_brand_impersonation_in_sender_identity_fires():
     from detector.checks import content
     # Display name claims the brand, From domain is unrelated -> impersonation.

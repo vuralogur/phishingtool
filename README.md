@@ -53,8 +53,9 @@ python run_gui.py
 ```
 
 - **Dosya Seç (.eml)** ile e-posta yükle veya ham metni kutuya **yapıştır**.
-- Sonuç: renkli **verdict rozeti** (low→critical) + SPF/DKIM/DMARC + severity renkli
-  **gösterge kartları** (kanıt + açıklama).
+- Sonuç: renkli **verdict rozeti** (low→critical) + SPF/DKIM/DMARC + **skor kırılımı**
+  (sert/yumuşak toplam, çarpan, verdict nedeni) + severity renkli **gösterge kartları**
+  (kanıt + açıklama).
 - **Online** anahtarı DNS/WHOIS/itibar sorgularını açar; analiz arka planda çalışır,
   pencere donmaz.
 - **JSON Kaydet** ile raporu dosyaya yaz.
@@ -144,6 +145,19 @@ sinyal varsa (sert = 0) sonuç **daima low** — kaç tane olursa olsun.
 | 22–44       | high     |
 | 45+         | critical |
 
+**Skor kırılımı raporda.** Puan düz toplam olmadığı için her rapor "bu sayı
+nereden geldi, verdict'i ne belirledi" sorusunu iki satırda kapatır — düz
+metinde, rich tablosunda, GUI'de ve `--json` çıktısında:
+
+```
+Skor kırılımı: sert 34 (3 gösterge) + yumuşak 18×0.3=5.4 (4 gösterge)  =  39/100
+Verdict nedeni: sert toplam ≥ 22 → high  ·  auth=pass (yumuşak çarpan ×0.3)
+```
+
+`--json` çıktısında aynı veri `breakdown` nesnesidir: `hard`, `soft_raw`, `soft`,
+`multiplier`, `auth_level`, `hard_count`, `soft_count`, `trusted`, `capped`
+(puan 100'de kırpıldı mı), `reason` (verdict'i belirleyen kural anahtarı).
+
 **First-party bastırma:** link gönderenin kendi domainine aitse (kendi tıklama
 tracker'ı) `anchor_href_mismatch`, `open_redirect`, `random_host` ateşlenmez.
 
@@ -202,7 +216,7 @@ Sözlükler `data/` altında düz metin — kod değiştirmeden genişlet:
 ## Testler
 
 ```bash
-python -m pytest -q      # 39 test
+python -m pytest -q      # 44 test
 ```
 
 ## Mimari
@@ -213,7 +227,7 @@ detector/
   analyzer.py     # orkestratör: parse -> tüm kontroller -> skor
   parser.py       # .eml / ham metin -> normalize ParsedEmail
   checks/         # headers, urls, content, attachments
-  scoring.py      # ağırlıklı, açıklanabilir skor -> verdict
+  scoring.py      # ağırlıklı, açıklanabilir skor -> verdict + skor kırılımı
   bench.py        # etiketli korpus -> precision / recall / F1 / hata listesi
   report.py       # rich tablo / düz metin / JSON çıktı
   reputation.py   # opsiyonel VirusTotal (online)

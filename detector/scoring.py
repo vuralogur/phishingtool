@@ -12,6 +12,10 @@ Two ideas keep false positives down on legitimate (often marketing) mail:
 2. Corroboration - the verdict is driven by the HARD-signal subtotal. Soft
    signals alone (hard subtotal 0) never push past "low"; they only sharpen a
    verdict that hard evidence already justifies.
+
+Because neither is a plain sum, every Result carries a ``Breakdown`` (subtotals,
+the multiplier that was applied, and the verdict rule that fired) so the report
+can answer "why this score" instead of asking the reader to trust it.
 """
 from __future__ import annotations
 from dataclasses import dataclass
@@ -46,12 +50,46 @@ _SOFT_MULT = {"pass": 0.3, "partial": 0.6, "fail": 1.0, "none": 1.0}
 
 
 @dataclass
+class Breakdown:
+    """How the score was assembled - answers "why this number, why this verdict".
+
+    hard/soft are subtotals; ``soft`` is ``soft_raw * multiplier``. ``reason`` is
+    the verdict rule that fired (a stable key; the report translates it).
+    """
+    hard: float
+    soft_raw: float
+    soft: float
+    multiplier: float
+    auth_level: str
+    hard_count: int
+    soft_count: int
+    trusted: bool
+    capped: bool
+    reason: str
+
+    def to_dict(self) -> dict:
+        return {
+            "hard": round(self.hard, 2),
+            "soft_raw": round(self.soft_raw, 2),
+            "soft": round(self.soft, 2),
+            "multiplier": self.multiplier,
+            "auth_level": self.auth_level,
+            "hard_count": self.hard_count,
+            "soft_count": self.soft_count,
+            "trusted": self.trusted,
+            "capped": self.capped,
+            "reason": self.reason,
+        }
+
+
+@dataclass
 class Result:
     verdict: str
     score: int
     max_score: int
     auth: dict
     indicators: list
+    breakdown: "Breakdown | None" = None
 
     def to_dict(self) -> dict:
         return {
@@ -59,6 +97,7 @@ class Result:
             "score": self.score,
             "max_score": self.max_score,
             "auth": self.auth,
+            "breakdown": self.breakdown.to_dict() if self.breakdown else None,
             "indicators": [i.to_dict() for i in self.indicators],
         }
 
@@ -83,35 +122,46 @@ def score(indicators, auth, from_rdom="", level=None, allowlist=None) -> Result:
     mult = _SOFT_MULT.get(level, 1.0)
 
     hard_sum = 0.0
-    soft_sum = 0.0
+    soft_raw = 0.0
+    hard_n = soft_n = 0
     for i in indicators:
         if i.id in SOFT_IDS:
-            soft_sum += i.weight * mult
+            soft_raw += i.weight
+            soft_n += 1
         else:
             hard_sum += i.weight
+            hard_n += 1
+    soft_sum = soft_raw * mult
 
-    total = min(int(round(hard_sum + soft_sum)), MAX_SCORE)
+    raw_total = int(round(hard_sum + soft_sum))
+    total = min(raw_total, MAX_SCORE)
 
     # Authenticated AND explicitly trusted domain: don't nag unless real
     # tradecraft is present.
-    trusted = level == "pass" and from_rdom and from_rdom in allowlist
+    trusted = level == "pass" and bool(from_rdom) and from_rdom in allowlist
 
     if trusted and hard_sum < 22:
-        verdict = "low"
+        verdict, reason = "low", "allowlist"
     elif hard_sum >= 45:
-        verdict = "critical"
+        verdict, reason = "critical", "hard_critical"
     elif hard_sum >= 22:
-        verdict = "high"
+        verdict, reason = "high", "hard_high"
     elif hard_sum >= 10:
-        verdict = "medium"
+        verdict, reason = "medium", "hard_medium"
     elif hard_sum > 0 and total >= 30:
         # a hard signal exists and soft noise piles on top
-        verdict = "medium"
+        verdict, reason = "medium", "soft_pileup"
     else:
         verdict = "low"
+        reason = "weak_hard_evidence" if hard_sum > 0 else "no_hard_evidence"
 
+    breakdown = Breakdown(
+        hard=hard_sum, soft_raw=soft_raw, soft=soft_sum, multiplier=mult,
+        auth_level=level, hard_count=hard_n, soft_count=soft_n,
+        trusted=trusted, capped=raw_total > MAX_SCORE, reason=reason,
+    )
     ordered = sorted(
         indicators,
         key=lambda i: (-SEVERITY_ORDER.get(i.severity, 0), -i.weight),
     )
-    return Result(verdict, total, MAX_SCORE, auth, ordered)
+    return Result(verdict, total, MAX_SCORE, auth, ordered, breakdown)

@@ -13,6 +13,46 @@ def to_json(result, source=None) -> str:
     return json.dumps(d, ensure_ascii=False, indent=2)
 
 
+_REASON_TR = {
+    "allowlist": "gönderen doğrulanmış + allowlist'te, sert iz yok",
+    "hard_critical": "sert toplam ≥ 45",
+    "hard_high": "sert toplam ≥ 22",
+    "hard_medium": "sert toplam ≥ 10",
+    "soft_pileup": "sert iz var, yumuşak yığılmayla toplam ≥ 30",
+    "weak_hard_evidence": "sert toplam < 10, yumuşak yığılma da yok",
+    "no_hard_evidence": "sert iz yok — yalnız yumuşak sinyal",
+}
+
+
+def _num(x) -> str:
+    """Trim a float to at most one decimal: 5.0 -> '5', 5.42 -> '5.4'."""
+    x = round(float(x), 1)
+    return str(int(x)) if x == int(x) else str(x)
+
+
+def breakdown_lines(result) -> list:
+    """Two Turkish lines: how the score adds up, and which rule set the verdict."""
+    b = getattr(result, "breakdown", None)
+    if b is None:
+        return []
+    soft = "yumuşak " + _num(b.soft_raw)
+    if b.soft_raw and b.multiplier != 1.0:
+        soft += "×" + _num(b.multiplier) + "=" + _num(b.soft)
+    total = str(result.score) + "/" + str(result.max_score)
+    if b.capped:
+        total += " (üst sınır)"
+    reason = _REASON_TR.get(b.reason, b.reason)
+    if not b.hard_count and not b.soft_count:
+        reason = "hiç gösterge yok"
+    return [
+        "Skor kırılımı: sert " + _num(b.hard) + " (" + str(b.hard_count) + " gösterge)"
+        " + " + soft + " (" + str(b.soft_count) + " gösterge)  =  " + total,
+        "Verdict nedeni: " + reason + " → " + result.verdict +
+        "  ·  auth=" + b.auth_level + " (yumuşak çarpan ×" + _num(b.multiplier) + ")" +
+        ("  ·  allowlist" if b.trusted else ""),
+    ]
+
+
 def _plain(result, source) -> str:
     lines = []
     if source:
@@ -21,6 +61,7 @@ def _plain(result, source) -> str:
                  "  (skor " + str(result.score) + "/" + str(result.max_score) + ")")
     a = result.auth
     lines.append("Auth: SPF=" + a["spf"] + " DKIM=" + a["dkim"] + " DMARC=" + a["dmarc"])
+    lines += breakdown_lines(result)
     lines.append("")
     if not result.indicators:
         lines.append("Gösterge yok — belirgin phishing işareti bulunamadı.")
@@ -115,7 +156,10 @@ def print_report(result, source=None):
                   result.verdict.upper() + " — skor " + str(result.score) + "/" +
                   str(result.max_score) + "[/]")
     a = result.auth
-    console.print("[dim]Auth:[/] SPF=" + a["spf"] + " DKIM=" + a["dkim"] + " DMARC=" + a["dmarc"] + "\n")
+    console.print("[dim]Auth:[/] SPF=" + a["spf"] + " DKIM=" + a["dkim"] + " DMARC=" + a["dmarc"])
+    for line in breakdown_lines(result):
+        console.print("[dim]" + line + "[/]")
+    console.print("")
     if not result.indicators:
         console.print("[green]Gösterge yok — belirgin phishing işareti bulunamadı.[/]")
         return

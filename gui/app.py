@@ -123,9 +123,10 @@ class App(ctk.CTk):
                  + str(result.score) + "/" + str(result.max_score),
             fg_color=color)
         a = result.auth
+        head = ("Kaynak: " + source + "     |     SPF=" + a["spf"]
+                + "   DKIM=" + a["dkim"] + "   DMARC=" + a["dmarc"])
         self.auth_label.configure(
-            text="Kaynak: " + source + "     |     SPF=" + a["spf"]
-                 + "   DKIM=" + a["dkim"] + "   DMARC=" + a["dmarc"])
+            text="\n".join([head] + report.breakdown_lines(result)))
         self.save_btn.configure(state="normal")
         self._clear_list()
         if not result.indicators:
