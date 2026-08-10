@@ -33,6 +33,9 @@ python -m detector.cli analyze tests/samples/phish.eml --json
 # stdin'den ham e-posta
 cat mail.eml | python -m detector.cli analyze -
 
+# IOC listesi de ver (URL / domain / IP / e-posta / ek SHA256)
+python -m detector.cli analyze mail.eml --iocs
+
 # Bir klasördeki tüm .eml dosyaları (CSV özet)
 python -m detector.cli batch tests/samples
 
@@ -61,6 +64,49 @@ python run_gui.py
 - **JSON Kaydet** ile raporu dosyaya yaz.
 
 Motor (`detector/`) GUI'den bağımsızdır; CLI ve GUI aynı `analyzer` API'sini kullanır.
+
+## IOC export — `--iocs`
+
+Bir maili "kötü" diye işaretlemek işin yarısı; diğer yarısı **aynı saldırıyı bir
+daha içeri almamak**. `--iocs` maildeki gözlemlenebilirleri blocklist / SIEM /
+VirusTotal beslemesi olarak çıkarır:
+
+```bash
+python -m detector.cli analyze mail.eml --iocs           # rapor + IOC bloğu
+python -m detector.cli analyze mail.eml --iocs --json    # ham değerler, otomasyon
+python -m detector.cli batch klasor/ --iocs              # CSV'ye 4 kolon ekler
+```
+
+Çıkarılanlar:
+
+- **URL** — anchor `href`'leri + form `action`, `img src`, `meta` refresh ve
+  yönlendirme parametresi hedefleri
+- **Domain** — hem tam host hem **kayıtlı domain** (`login.evil.tk` → `evil.tk`);
+  biri altyapıyı, diğeri saldırganın aldığı domainin tamamını engeller
+- **IP** — URL'deki IP-literal host + Received zincirindeki köken IP
+  (özel/ayrılmış aralıklar atılır — blocklist'te işe yaramaz)
+- **E-posta** — From / Reply-To / Return-Path
+- **Ek** — dosya adı, MIME tipi, boyut, **SHA256** (VT'ye sorgu için hazır)
+
+```
+IOC listesi (defanged — tıklanamaz; ham değerler için --json):
+  URL (2):
+    hxxp://198[.]51[.]100[.]7/login
+    hxxp://secure-verify[.]tk/paypal
+  Ek (1):
+    fatura.pdf.exe  ·  32 B  ·  application/octet-stream
+      sha256=34b9348ecccb09747637e5bdaa744e48362a9e684b260766e49868f2e50cecab
+```
+
+İki kural:
+
+- **Metin çıktısı defanged** (`hxxp://`, `[.]`, `[at]`) — bileti/mesajı okuyan
+  kimse yanlışlıkla tıklamasın. **JSON ve CSV ham** değer taşır; tüketicisi makine.
+- **Anchor metni IOC değildir.** `<a href="http://kotu.tk">https://www.paypal.com</a>`
+  bağlantısında `paypal.com` **listeye girmez** — o, göze gösterilen isimdir;
+  engellemek kurbanın kendi bankasını engellemek olurdu.
+
+Hiçbir şey çözümlenmez, indirilmez, çalıştırılmaz — sadece ayrıştırılmış metin.
 
 ## Doğruluk ölçümü — `bench`
 
@@ -216,14 +262,15 @@ Sözlükler `data/` altında düz metin — kod değiştirmeden genişlet:
 ## Testler
 
 ```bash
-python -m pytest -q      # 44 test
+python -m pytest -q      # 57 test
 ```
 
 ## Mimari
 
 ```
 detector/
-  cli.py          # komut satırı (analyze / batch / bench)
+  cli.py          # komut satırı (analyze / batch / bench, --iocs)
+  iocs.py         # IOC çıkarımı: URL/domain/IP/e-posta/ek SHA256 (+ defang)
   analyzer.py     # orkestratör: parse -> tüm kontroller -> skor
   parser.py       # .eml / ham metin -> normalize ParsedEmail
   checks/         # headers, urls, content, attachments

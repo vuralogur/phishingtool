@@ -2,15 +2,50 @@
 from __future__ import annotations
 import json
 
+from .iocs import defang
+
 _COLORS = {"low": "green", "medium": "yellow", "high": "red", "critical": "bold red"}
 _EMOJI = {"low": "🟢", "medium": "🟡", "high": "🟠", "critical": "🔴"}
+_IOC_TITLES = (("urls", "URL"), ("domains", "Domain"), ("ips", "IP"),
+               ("emails", "E-posta"))
 
 
-def to_json(result, source=None) -> str:
+def to_json(result, source=None, iocs=None) -> str:
     d = result.to_dict()
     if source:
         d = {"source": source, **d}
+    if iocs is not None:
+        d["iocs"] = iocs.to_dict()
     return json.dumps(d, ensure_ascii=False, indent=2)
+
+
+def iocs_lines(iocs) -> list:
+    """IOC block, defanged — JSON/CSV output carries the raw values instead."""
+    if iocs is None:
+        return []
+    lines = ["IOC listesi (defanged — tıklanamaz; ham değerler için --json):"]
+    d = iocs.to_dict()
+    for key, title in _IOC_TITLES:
+        vals = d.get(key) or []
+        if not vals:
+            continue
+        lines.append("  " + title + " (" + str(len(vals)) + "):")
+        lines += ["    " + defang(v) for v in vals]
+    if iocs.attachments:
+        lines.append("  Ek (" + str(len(iocs.attachments)) + "):")
+        for a in iocs.attachments:
+            lines.append("    " + (a["filename"] or "(isimsiz)") + "  ·  " +
+                         str(a["size"]) + " B  ·  " + (a["content_type"] or "?"))
+            lines.append("      sha256=" + (a["sha256"] or "(boş ek)"))
+    if len(lines) == 1:
+        lines.append("  IOC bulunamadı.")
+    return lines
+
+
+def print_iocs(iocs):
+    """Plain print on purpose: this block is meant to be copied out verbatim."""
+    print("")
+    print("\n".join(iocs_lines(iocs)))
 
 
 _REASON_TR = {

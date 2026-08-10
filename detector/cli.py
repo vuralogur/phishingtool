@@ -1,7 +1,8 @@
 """Command-line entrypoint.
 
-  python -m detector.cli analyze <file.eml | ->  [--online] [--json]
-  python -m detector.cli batch   <dir>           [--online] [--json]
+  python -m detector.cli analyze <file.eml | ->  [--online] [--json] [--iocs]
+  python -m detector.cli batch   <dir>           [--online] [--json] [--iocs]
+  python -m detector.cli bench   <corpus dir>    [--threshold high] [--json]
 """
 from __future__ import annotations
 import argparse
@@ -10,7 +11,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import analyzer, bench as _bench, report
+from . import analyzer, bench as _bench, iocs as _iocs, parser as _parser, report
 
 # Windows legacy consoles default to a regional codepage (e.g. cp1254) that
 # cannot encode emoji / some characters. Force UTF-8 so output never crashes.
@@ -24,19 +25,24 @@ for _stream in (sys.stdout, sys.stderr):
 def cmd_analyze(args) -> int:
     ctx = analyzer.build_context()
     src = args.input
+    # Parse first: --iocs needs the ParsedEmail, not just the score.
     if src == "-":
-        result = analyzer.analyze_text(sys.stdin.read(), online=args.online, ctx=ctx)
+        email = _parser.parse_text(sys.stdin.read())
         src = "(stdin)"
     else:
         p = Path(src)
         if not p.exists():
             print("HATA: dosya yok: " + src, file=sys.stderr)
             return 2
-        result = analyzer.analyze_file(p, online=args.online, ctx=ctx)
+        email = _parser.parse_file(p)
+    result = analyzer.analyze(email, online=args.online, ctx=ctx)
+    found = _iocs.collect(email) if args.iocs else None
     if args.json:
-        print(report.to_json(result, source=src))
+        print(report.to_json(result, source=src, iocs=found))
     else:
         report.print_report(result, source=src)
+        if found is not None:
+            report.print_iocs(found)
     return 0
 
 
@@ -49,23 +55,44 @@ def cmd_batch(args) -> int:
     rows = []
     for f in sorted(d.glob("*.eml")):
         try:
-            rows.append((f.name, analyzer.analyze_file(f, online=args.online, ctx=ctx)))
+            email = _parser.parse_file(f)
+            rows.append((f.name, analyzer.analyze(email, online=args.online, ctx=ctx),
+                         _iocs.collect(email) if args.iocs else None))
         except Exception:
-            rows.append((f.name, None))
+            rows.append((f.name, None, None))
     if args.json:
-        out = [dict({"source": name}, **(r.to_dict() if r else {"error": True}))
-               for name, r in rows]
+        out = []
+        for name, r, found in rows:
+            row = dict({"source": name}, **(r.to_dict() if r else {"error": True}))
+            if found is not None:
+                row["iocs"] = found.to_dict()
+            out.append(row)
         print(json.dumps(out, ensure_ascii=False, indent=2))
     else:
-        w = csv.writer(sys.stdout)
-        w.writerow(["file", "verdict", "score", "spf", "dkim", "dmarc", "indicators"])
-        for name, r in rows:
-            if r:
-                w.writerow([name, r.verdict, r.score, r.auth["spf"], r.auth["dkim"],
-                            r.auth["dmarc"], ";".join(i.id for i in r.indicators)])
-            else:
-                w.writerow([name, "error", "", "", "", "", ""])
+        # lineterminator="\n": stdout already translates newlines on Windows, so
+        # csv's default "\r\n" would emit a blank line between every row.
+        w = csv.writer(sys.stdout, lineterminator="\n")
+        head = ["file", "verdict", "score", "spf", "dkim", "dmarc", "indicators"]
+        if args.iocs:
+            # Raw (not defanged) - a CSV is machine input, feed it to the SIEM.
+            head += ["urls", "domains", "ips", "sha256"]
+        w.writerow(head)
+        for name, r, found in rows:
+            row = ([name, r.verdict, r.score, r.auth["spf"], r.auth["dkim"],
+                    r.auth["dmarc"], ";".join(i.id for i in r.indicators)]
+                   if r else [name, "error", "", "", "", "", ""])
+            if args.iocs:
+                row += _ioc_columns(found)
+            w.writerow(row)
     return 0
+
+
+def _ioc_columns(found) -> list:
+    """The four batch-CSV IOC columns, semicolon-joined (empty on parse error)."""
+    if found is None:
+        return ["", "", "", ""]
+    return [";".join(found.urls), ";".join(found.domains), ";".join(found.ips),
+            ";".join(a["sha256"] for a in found.attachments if a["sha256"])]
 
 
 def cmd_bench(args) -> int:
@@ -96,12 +123,17 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--online", action="store_true",
                    help="DNS/WHOIS/itibar sorgularini etkinlestir (ag kullanir)")
     a.add_argument("--json", action="store_true", help="JSON cikti")
+    a.add_argument("--iocs", action="store_true",
+                   help="IOC listesi ekle: URL/domain/IP/e-posta/ek SHA256 "
+                        "(metinde defanged, --json ile ham)")
     a.set_defaults(func=cmd_analyze)
 
     b = sub.add_parser("batch", help="Bir klasordeki tum .eml dosyalarini tara")
     b.add_argument("dir", help="Klasor yolu")
     b.add_argument("--online", action="store_true")
     b.add_argument("--json", action="store_true")
+    b.add_argument("--iocs", action="store_true",
+                   help="Her satira IOC kolonlari ekle (urls/domains/ips/sha256, ham)")
     b.set_defaults(func=cmd_batch)
 
     n = sub.add_parser(

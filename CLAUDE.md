@@ -29,14 +29,16 @@ risk skoru üretir (`low` / `medium` / `high` / `critical`). Türkçe arayüz/ç
 # tek dosya
 python -m detector.cli analyze mail.eml
 python -m detector.cli analyze mail.eml --online --json
+# IOC listesi (blocklist/SIEM): metin defanged, --json/CSV ham
+python -m detector.cli analyze mail.eml --iocs
 # klasör
-python -m detector.cli batch klasor/
+python -m detector.cli batch klasor/ [--iocs]
 # etiketli korpusa karşı ölçüm (precision/recall/F1 + hata listesi)
 python -m detector.cli bench corpus/ [--threshold high] [--json]
 # GUI
 python run_gui.py
 # testler
-python -m pytest -q      # 44 test
+python -m pytest -q      # 57 test
 ```
 
 ## Mimari
@@ -58,7 +60,12 @@ python -m pytest -q      # 44 test
   precision/recall/F1/FP-oranı, eşik taraması (`medium|high|critical`), FP/FN
   listesi (her biri sert gösterge id'leriyle). Etiket kaynağı: `labels.csv`
   (`file,label`) **veya** `phish/` + `ham/` alt klasörleri.
-- `detector/report.py` — rich tablo (yoksa düz metin), `to_json`;
+- `detector/iocs.py` — `collect(email) -> IOCSet` (urls/domains/ips/emails/
+  attachments+sha256) + `defang()`. HTML'de **yalnız attribute içindeki** URL'ler
+  sayılır (anchor *metni* IOC değil — meşru markayı engellememek için); Received
+  köken IP'sinde özel/ayrılmış aralıklar elenir. Metin defanged, JSON/CSV ham.
+- `detector/report.py` — rich tablo (yoksa düz metin), `to_json(result, source, iocs)`,
+  `iocs_lines`/`print_iocs`;
   `breakdown_lines()` skor kırılımının iki Türkçe satırı (CLI + GUI ortak kullanır);
   `print_bench` / `bench_to_json` benchmark çıktısı.
 
