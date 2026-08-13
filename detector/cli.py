@@ -1,7 +1,7 @@
 """Command-line entrypoint.
 
   phishingtool analyze <file.eml | ->  [--online] [--json] [--iocs]
-  phishingtool batch   <dir>           [--online] [--json] [--iocs]
+  phishingtool batch   <dir>           [--online] [--json] [--iocs] [--verbose]
   phishingtool bench   <corpus dir>    [--threshold high] [--json]
 
 Installed as the `phishingtool` console script; `python -m detector.cli ...`
@@ -12,6 +12,7 @@ import argparse
 import csv
 import json
 import sys
+import traceback
 from pathlib import Path
 
 from . import analyzer, bench as _bench, iocs as _iocs, parser as _parser, report
@@ -56,17 +57,26 @@ def cmd_batch(args) -> int:
         print("HATA: klasor yok: " + args.dir, file=sys.stderr)
         return 2
     rows = []
+    failed = 0
     for f in sorted(d.glob("*.eml")):
         try:
             email = _parser.parse_file(f)
             rows.append((f.name, analyzer.analyze(email, online=args.online, ctx=ctx),
-                         _iocs.collect(email) if args.iocs else None))
-        except Exception:
-            rows.append((f.name, None, None))
+                         _iocs.collect(email) if args.iocs else None, ""))
+        except Exception as exc:
+            # Never swallow the reason. An unexplained "error" row means a mail
+            # quietly left the scan - a false negative nobody can see. The
+            # message goes to stderr so stdout stays valid CSV/JSON.
+            failed += 1
+            err = _describe(exc)
+            print("HATA: " + f.name + ": " + err, file=sys.stderr)
+            if args.verbose:
+                traceback.print_exc()
+            rows.append((f.name, None, None, err))
     if args.json:
         out = []
-        for name, r, found in rows:
-            row = dict({"source": name}, **(r.to_dict() if r else {"error": True}))
+        for name, r, found, err in rows:
+            row = dict({"source": name}, **(r.to_dict() if r else {"error": err}))
             if found is not None:
                 row["iocs"] = found.to_dict()
             out.append(row)
@@ -79,15 +89,24 @@ def cmd_batch(args) -> int:
         if args.iocs:
             # Raw (not defanged) - a CSV is machine input, feed it to the SIEM.
             head += ["urls", "domains", "ips", "sha256"]
+        head.append("error")   # empty on success, "Type: message" on failure
         w.writerow(head)
-        for name, r, found in rows:
+        for name, r, found, err in rows:
             row = ([name, r.verdict, r.score, r.auth["spf"], r.auth["dkim"],
                     r.auth["dmarc"], ";".join(i.id for i in r.indicators)]
                    if r else [name, "error", "", "", "", "", ""])
             if args.iocs:
                 row += _ioc_columns(found)
+            row.append(err)
             w.writerow(row)
-    return 0
+    # A run that could not read part of its input must not look successful.
+    return 1 if failed else 0
+
+
+def _describe(exc) -> str:
+    """One-line "Type: message" label for an error row (message may be empty)."""
+    text = " ".join(str(exc).split())
+    return type(exc).__name__ + (": " + text if text else "")
 
 
 def _ioc_columns(found) -> list:
@@ -145,6 +164,9 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--json", action="store_true")
     b.add_argument("--iocs", action="store_true",
                    help="Her satira IOC kolonlari ekle (urls/domains/ips/sha256, ham)")
+    b.add_argument("-v", "--verbose", action="store_true",
+                   help="Analiz edilemeyen dosyalar icin tam traceback yaz (stderr). "
+                        "Hata sebebi zaten 'error' kolonunda ve stderr'de.")
     b.set_defaults(func=cmd_batch)
 
     n = sub.add_parser(

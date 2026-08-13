@@ -118,5 +118,6 @@ def test_cli_json_omits_iocs_without_the_flag(capsys):
 def test_cli_batch_adds_ioc_columns(capsys):
     assert cli.main(["batch", str(SAMPLES), "--iocs"]) == 0
     out = capsys.readouterr().out.splitlines()
-    assert out[0].endswith("urls,domains,ips,sha256")
+    # IOC columns stay together; the error column is always last.
+    assert out[0].endswith("urls,domains,ips,sha256,error")
     assert any("198.51.100.7" in line for line in out[1:])

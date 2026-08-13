@@ -21,6 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .indicators import SEVERITY_ORDER
+from .mitre import summary as technique_summary
 
 MAX_SCORE = 100
 
@@ -98,6 +99,9 @@ class Result:
             "max_score": self.max_score,
             "auth": self.auth,
             "breakdown": self.breakdown.to_dict() if self.breakdown else None,
+            # ATT&CK roll-up: which techniques this mail used, so a consumer does
+            # not have to group the indicator list itself.
+            "techniques": technique_summary(self.indicators),
             "indicators": [i.to_dict() for i in self.indicators],
         }
 

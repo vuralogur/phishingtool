@@ -2,6 +2,7 @@
 from __future__ import annotations
 import json
 
+from . import mitre
 from .iocs import defang
 
 _COLORS = {"low": "green", "medium": "yellow", "high": "red", "critical": "bold red"}
@@ -88,6 +89,29 @@ def breakdown_lines(result) -> list:
     ]
 
 
+def technique_lines(result) -> list:
+    """MITRE ATT&CK block: one line per technique, with what raised it.
+
+    Turns tool-private indicator slugs into the vocabulary a SOC already maps
+    its detections and playbooks against.
+    """
+    rows = mitre.summary(result.indicators)
+    if not rows:
+        return []
+    width = max(len(r["id"]) for r in rows)
+    lines = ["MITRE ATT&CK teknikleri (" + str(len(rows)) + "):"]
+    for r in rows:
+        lines.append("  " + r["id"].ljust(width) + "  " + r["name"] +
+                     "  —  " + ", ".join(r["indicators"]))
+    return lines
+
+
+def technique_summary_line(result) -> str:
+    """Same information as one short line, for space-constrained surfaces."""
+    rows = mitre.summary(result.indicators)
+    return "ATT&CK: " + " · ".join(r["id"] for r in rows) if rows else ""
+
+
 def _plain(result, source) -> str:
     lines = []
     if source:
@@ -104,9 +128,14 @@ def _plain(result, source) -> str:
         lines.append(str(len(result.indicators)) + " gösterge:")
         for i in result.indicators:
             lines.append("  [" + i.severity.upper().ljust(8) + "] +" + str(i.weight).rjust(2) +
-                         " " + i.id + " (" + i.category + ")")
+                         " " + i.id + " (" + i.category + ")" +
+                         ("  ·  " + i.technique if i.technique else ""))
             lines.append("        kanıt: " + i.evidence)
             lines.append("        açıklama: " + i.explanation)
+        block = technique_lines(result)
+        if block:
+            lines.append("")
+            lines += block
     return "\n".join(lines)
 
 
@@ -202,9 +231,13 @@ def print_report(result, source=None):
     t.add_column("Sev")
     t.add_column("W", justify="right")
     t.add_column("Gösterge")
+    t.add_column("ATT&CK")
     t.add_column("Kanıt / Açıklama", overflow="fold")
     for i in result.indicators:
         c = _COLORS.get(i.severity, "white")
         t.add_row("[" + c + "]" + i.severity + "[/]", str(i.weight), i.id,
+                  i.technique or "—",
                   i.evidence + "\n[dim]" + i.explanation + "[/]")
     console.print(t)
+    for line in technique_lines(result):
+        console.print("[dim]" + line + "[/]")

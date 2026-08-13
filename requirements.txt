@@ -37,12 +37,13 @@ numpy>=1.26
 # Desktop GUI (optional):
 customtkinter>=5.2
 
-# --- Benchmark harness, score breakdown, IOC export (--iocs) ---
+# --- Benchmark harness, score breakdown, IOC export, ATT&CK tags ---
 # Need NOTHING extra: corpus loading, metrics (precision/recall/F1), the score
-# breakdown line (hard/soft subtotals, trust multiplier, verdict reason) and IOC
-# extraction (URL/domain/IP/e-mail/attachment SHA256) are pure stdlib
-# (csv + dataclasses + hashlib + ipaddress).
+# breakdown line (hard/soft subtotals, trust multiplier, verdict reason), IOC
+# extraction (URL/domain/IP/e-mail/attachment SHA256) and the MITRE ATT&CK
+# technique tags (detector/mitre.py - a static table, no API and no network)
+# are pure stdlib (csv + dataclasses + hashlib + ipaddress + re).
 
 # --- Development / tests only ---
-# pytest>=8.0            # run `python -m pytest -q` (62 tests); CI runs the same
+# pytest>=8.0            # run `python -m pytest -q` (79 tests); CI runs the same
 #                        # suite on 3.11-3.14 (Linux) and 3.12 (Windows)

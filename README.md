@@ -55,6 +55,7 @@ python -m detector.cli analyze mail.eml --iocs
 
 # Bir klasördeki tüm .eml dosyaları (CSV özet)
 python -m detector.cli batch tests/samples
+python -m detector.cli batch klasor/ --verbose   # bozuk dosyalar için traceback
 
 # Etiketli korpusa karşı doğruluk ölçümü (precision / recall / F1)
 python -m detector.cli bench corpus/
@@ -62,6 +63,11 @@ python -m detector.cli bench corpus/
 # Ağ sorgularını aç (SPF/DMARC DNS, WHOIS, itibar API — opt-in)
 python -m detector.cli analyze mail.eml --online
 ```
+
+`batch` CSV'sinin **son kolonu her zaman `error`**: bir dosya analiz edilemediyse
+sebebi (`ValueError: ...`) orada yazar, aynı satır `stderr`'e de düşer ve komut
+**exit 1** döner. Bozuk örnek sessizce taramadan düşmez — sebepsiz bir "error"
+satırı, kimsenin göremediği bir yanlış negatiftir. `--verbose` tam traceback ekler.
 
 ## Masaüstü GUI (opsiyonel)
 
@@ -124,6 +130,54 @@ IOC listesi (defanged — tıklanamaz; ham değerler için --json):
   engellemek kurbanın kendi bankasını engellemek olurdu.
 
 Hiçbir şey çözümlenmez, indirilmez, çalıştırılmaz — sadece ayrıştırılmış metin.
+
+## MITRE ATT&CK etiketi
+
+Her gösterge, tespit ettiği davranışın **ATT&CK teknik kimliğiyle** birlikte
+raporlanır. `anchor_href_mismatch` bu araca özel bir slug; `T1566.002` ise SOC'un
+kapsama haritasında, playbook'unda ve SIEM kuralında zaten kullandığı ortak dil —
+rapor böylece doğrudan pivotlanabilir hale gelir.
+
+```
+23 gösterge:
+  [HIGH    ] +20 anchor_href_mismatch (url)  ·  T1566.002
+  ...
+
+MITRE ATT&CK teknikleri (7):
+  T1036.007  Masquerading: Double File Extension  —  double_extension
+  T1566      Phishing  —  generic_greeting, urgency_language
+  T1566.001  Phishing: Spearphishing Attachment  —  dangerous_attachment
+  T1566.002  Phishing: Spearphishing Link  —  anchor_href_mismatch, ip_url
+  T1583.001  Acquire Infrastructure: Domains  —  suspicious_tld
+  T1598      Phishing for Information  —  credential_request
+  T1656      Impersonation  —  brand_impersonation, dmarc_fail, spf_fail
+```
+
+`--json` çıktısında iki yerde görünür: her göstergede `technique` +
+`technique_name`, ayrıca üst seviyede gruplanmış `techniques` listesi.
+
+```json
+"techniques": [
+  {"id": "T1566.002", "name": "Phishing: Spearphishing Link",
+   "url": "https://attack.mitre.org/techniques/T1566/002/",
+   "indicators": ["anchor_href_mismatch", "ip_url"]}
+]
+```
+
+Eşleme (`detector/mitre.py`) bilinçli olarak muhafazakâr:
+
+- **Gösterge başına tek teknik** — en yakın eşleşme, "olabilecek her teknik"
+  değil. Her phishing maili tepede zaten T1566'dır; bunu 50 göstergeye birden
+  basmak hiçbir bilgi taşımaz.
+- **Her şey eşlenmez.** `vt_flagged` üçüncü taraf verdict'i, `no_spf_record`
+  taklit edilen domainin kendi hijyeni — ikisi de saldırganın *yaptığı* bir şey
+  değil, o yüzden `NO_TECHNIQUE` kümesinde durur. "Bilerek eşlenmedi" ile
+  "unutuldu" ayrımını bir **drift testi** korur: kaynakta eşlemesiz yeni bir
+  gösterge belirirse test kırmızı yanar.
+
+Etiketleme `Indicator.__post_init__` içinde yapılır; CLI, GUI, `bench` ve doğrudan
+check çağrısı dahil her yol etiketi otomatik alır — atlanabilecek ayrı bir adım yok.
+Skoru ve verdict'i **etkilemez**, saf metadata'dır.
 
 ## Doğruluk ölçümü — `bench`
 
@@ -224,7 +278,7 @@ Verdict nedeni: sert toplam ≥ 22 → high  ·  auth=pass (yumuşak çarpan ×0
 **First-party bastırma:** link gönderenin kendi domainine aitse (kendi tıklama
 tracker'ı) `anchor_href_mismatch`, `open_redirect`, `random_host` ateşlenmez.
 
-**Allowlist:** `data/trusted_domains.txt`'e yazılan domainler, mail
+**Allowlist:** `detector/data/trusted_domains.txt`'e yazılan domainler, mail
 **doğrulanmış (DMARC pass)** ise ve sert saldırı izi yoksa **low**'a sabitlenir.
 
 ## Kontrol edilen göstergeler
@@ -244,6 +298,8 @@ tracker'ı) `anchor_href_mismatch`, `open_redirect`, `random_host` ateşlenmez.
 `archive_attachment`, `mime_extension_mismatch`.
 
 **İtibar (online, opt-in)** — `vt_flagged` (VirusTotal, `VT_API_KEY` gerekir).
+
+Her gösterge ayrıca bir **MITRE ATT&CK tekniğiyle** etiketlidir (`detector/mitre.py`).
 
 **HTML adli (Tier 2)** — `form_external_action`, `html_password_input`,
 `meta_refresh_redirect`, `hidden_iframe`, `base_tag_href`, `obfuscated_script`,
@@ -292,7 +348,7 @@ Eksik dosya hata değil — o sözlük boş kabul edilir.
 ## Testler
 
 ```bash
-python -m pytest -q      # 62 test
+python -m pytest -q      # 79 test
 ```
 
 Her push ve PR'da GitHub Actions bunları çalıştırır: **opsiyonel bağımlılık
@@ -304,11 +360,13 @@ kurulmadan** Python 3.11/3.12/3.13/3.14 (Linux) + 3.12 (Windows) — yeşil kalm
 
 ```
 detector/
-  cli.py          # komut satırı (analyze / batch / bench, --iocs)
+  cli.py          # komut satırı (analyze / batch / bench, --iocs, --verbose)
   iocs.py         # IOC çıkarımı: URL/domain/IP/e-posta/ek SHA256 (+ defang)
   analyzer.py     # orkestratör: parse -> tüm kontroller -> skor
   parser.py       # .eml / ham metin -> normalize ParsedEmail
   checks/         # headers, urls, content, attachments
+  indicators.py   # Indicator (kanıt birimi) + otomatik ATT&CK etiketi
+  mitre.py        # gösterge -> MITRE ATT&CK tekniği eşlemesi
   scoring.py      # ağırlıklı, açıklanabilir skor -> verdict + skor kırılımı
   bench.py        # etiketli korpus -> precision / recall / F1 / hata listesi
   report.py       # rich tablo / düz metin / JSON çıktı
@@ -323,6 +381,10 @@ pyproject.toml    # paket metadata + `phishingtool` konsol komutu
 
 ## Yol haritası (opsiyonel)
 
+- `.msg` (Outlook) desteği — `extract_msg` opsiyonel, parser'a ikinci giriş
+- HTML rapor (`--html rapor.html`) — tek dosya, gömülü CSS
+- Received hop tablosu — veri `auth_verify.py`'de var, raporlanmıyor
+- `config.toml` (tomllib) — ağırlık/eşik/`SOFT_IDS` override
 - Web UI (FastAPI): e-posta yapıştır/yükle → görsel rapor
 - Ek itibar kaynakları (PhishTank, Google Safe Browsing)
 - Redirect zinciri takibi (opt-in, sandboxed)

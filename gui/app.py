@@ -125,8 +125,11 @@ class App(ctk.CTk):
         a = result.auth
         head = ("Kaynak: " + source + "     |     SPF=" + a["spf"]
                 + "   DKIM=" + a["dkim"] + "   DMARC=" + a["dmarc"])
+        # Compact ATT&CK line here (ids only); each card carries its own id.
+        attck = report.technique_summary_line(result)
         self.auth_label.configure(
-            text="\n".join([head] + report.breakdown_lines(result)))
+            text="\n".join([head] + report.breakdown_lines(result) +
+                           ([attck] if attck else [])))
         self.save_btn.configure(state="normal")
         self._clear_list()
         if not result.indicators:
@@ -148,7 +151,8 @@ class App(ctk.CTk):
         ctk.CTkLabel(
             body,
             text="[" + ind.severity.upper() + "]  +" + str(ind.weight) + "   "
-                 + ind.id + "  (" + ind.category + ")",
+                 + ind.id + "  (" + ind.category + ")"
+                 + ("   ·   " + ind.technique if ind.technique else ""),
             font=ctk.CTkFont(size=13, weight="bold"), text_color=c,
             anchor="w", justify="left").pack(fill="x", padx=4)
         ctk.CTkLabel(body, text="kanıt: " + ind.evidence, anchor="w",

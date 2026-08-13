@@ -33,14 +33,14 @@ python -m detector.cli analyze mail.eml
 python -m detector.cli analyze mail.eml --online --json
 # IOC listesi (blocklist/SIEM): metin defanged, --json/CSV ham
 python -m detector.cli analyze mail.eml --iocs
-# klasör
-python -m detector.cli batch klasor/ [--iocs]
+# klasör (CSV'nin son kolonu `error`; hata varsa exit 1, --verbose traceback verir)
+python -m detector.cli batch klasor/ [--iocs] [--verbose]
 # etiketli korpusa karşı ölçüm (precision/recall/F1 + hata listesi)
 python -m detector.cli bench corpus/ [--threshold high] [--json]
 # GUI
 python run_gui.py
 # testler
-python -m pytest -q      # 62 test (CI: 3.11–3.14 Linux + 3.12 Windows)
+python -m pytest -q      # 79 test (CI: 3.11–3.14 Linux + 3.12 Windows)
 ```
 
 ## Mimari
@@ -53,7 +53,16 @@ python -m pytest -q      # 62 test (CI: 3.11–3.14 Linux + 3.12 Windows)
   Analiz başında **güven bağlamı** hesaplar (`auth_level`, `from_rdom`) ve hem
   check'lere (ctx içinde) hem `score()`'a geçirir.
 - `detector/checks/*.py` — her modül `run(email, online=False, ctx=None) -> list[Indicator]`.
-- `detector/indicators.py` — `Indicator(id, category, severity, weight, evidence, explanation)`.
+- `detector/indicators.py` — `Indicator(id, category, severity, weight, evidence,
+  explanation, technique="", technique_name="")`. `__post_init__` boş `technique`'i
+  `mitre.lookup(id)` ile doldurur → **her yol** (CLI/GUI/bench/doğrudan check)
+  etiketi otomatik alır, atlanacak ayrı adım yok.
+- `detector/mitre.py` — gösterge id → MITRE ATT&CK tekniği. `TECHNIQUES` (eşleme),
+  `NAMES` (teknik adları), `NO_TECHNIQUE` (bilerek eşlenmeyenler: `vt_flagged`,
+  `no_spf_record`, `no_dmarc_record`, `no_received_headers`, `private_origin_ip`),
+  `lookup(id)`, `summary(indicators)`, `url(tid)`. Gösterge başına **tek** teknik.
+  Saf tablo — ağ yok, bağımlılık yok. `tests/test_mitre.py` içindeki **drift testi**
+  kaynağı tarar: eşlemesiz yeni `Indicator(...)` = kırmızı test.
 - `detector/scoring.py` — güven-farkındalıklı skor + verdict. `Result.breakdown`
   (`Breakdown`): sert/yumuşak alt toplam, uygulanan çarpan, sayımlar, `trusted`,
   `capped` ve verdict'i belirleyen kural anahtarı `reason` (`hard_critical|
@@ -69,7 +78,10 @@ python -m pytest -q      # 62 test (CI: 3.11–3.14 Linux + 3.12 Windows)
 - `detector/report.py` — rich tablo (yoksa düz metin), `to_json(result, source, iocs)`,
   `iocs_lines`/`print_iocs`;
   `breakdown_lines()` skor kırılımının iki Türkçe satırı (CLI + GUI ortak kullanır);
+  `technique_lines()` ATT&CK bloğu (CLI) / `technique_summary_line()` tek satır (GUI);
   `print_bench` / `bench_to_json` benchmark çıktısı.
+- `detector/cli.py` — `batch` hata sebebini **yutmaz**: satır `error` kolonuna +
+  stderr'e yazılır, `--verbose` traceback ekler, en az bir hata varsa exit 1.
 
 ### Check modülleri
 
@@ -101,6 +113,10 @@ Düz toplam DEĞİL. `detector/scoring.py`:
    `anchor_href_mismatch`/`open_redirect`/`random_host` ateşlenmez.
 5. **Allowlist** — `detector/data/trusted_domains.txt`: DMARC-pass + listedeki
    domain, sert iz yoksa **low**'a sabitlenir.
+
+**ATT&CK etiketi skoru etkilemez** — saf metadata. Her gösterge `technique`/
+`technique_name` taşır; `Result.to_dict()` üst seviyede gruplanmış `techniques`
+listesi (`id`, `name`, `url`, tetikleyen `indicators`) verir.
 
 Bu hesap gizli değil: her rapor (düz metin, rich, GUI, `--json`) iki satır olarak
 gösterir — `Skor kırılımı: sert 34 (3 gösterge) + yumuşak 18×0.3=5.4 (4 gösterge)
@@ -135,6 +151,10 @@ Sözlükler **paket içinde** (wheel'e girer, `phishingtool` her dizinden bulur)
   (`pyproject.toml`, `.github/workflows/ci.yml`; sözlükler pakete taşındı,
   `--data-dir`/`PHISHINGTOOL_DATA` override'ı eklendi). Threat intel API,
   YAML/TOML config, GUI önizleme, PDF rapor hâlâ PENDING.
+- **MITRE ATT&CK etiketi** (`detector/mitre.py`) — **DONE**; `batch` hata
+  raporlaması (`error` kolonu + `--verbose` + exit 1) — **DONE**.
+  Sırada: `.msg` (Outlook) desteği, HTML rapor (`--html`), Received hop tablosu,
+  `config.toml` ile ağırlık/eşik override.
 
 Örnek: `python -m detector.cli analyze tests/samples/phish_tier2.eml` → critical 100.
 
