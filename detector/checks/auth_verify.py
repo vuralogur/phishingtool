@@ -45,6 +45,11 @@ def _origin_ip(email):
 def _received_forensics(email):
     out = []
     if not email.received:
+        if getattr(email, "header_source", "rfc822") == "mapi":
+            # A .msg without saved internet headers never had a Received chain
+            # to lose - that is Outlook's doing, not the sender's. headers.py
+            # reports the gap; calling it possible injection here would be wrong.
+            return out
         out.append(Indicator("no_received_headers", "auth", "low", 5,
             "Received başlığı yok",
             "Received zinciri yok — doğrudan enjeksiyon / spoof edilmiş olabilir."))

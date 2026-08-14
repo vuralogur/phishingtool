@@ -1,8 +1,8 @@
 """Command-line entrypoint.
 
-  phishingtool analyze <file.eml | ->  [--online] [--json] [--iocs]
-  phishingtool batch   <dir>           [--online] [--json] [--iocs] [--verbose]
-  phishingtool bench   <corpus dir>    [--threshold high] [--json]
+  phishingtool analyze <file.eml|.msg|->  [--online] [--json] [--iocs]
+  phishingtool batch   <dir>              [--online] [--json] [--iocs] [--verbose]
+  phishingtool bench   <corpus dir>       [--threshold high] [--json]
 
 Installed as the `phishingtool` console script; `python -m detector.cli ...`
 works identically from a source checkout.
@@ -31,7 +31,11 @@ def cmd_analyze(args) -> int:
     src = args.input
     # Parse first: --iocs needs the ParsedEmail, not just the score.
     if src == "-":
-        email = _parser.parse_text(sys.stdin.read())
+        # Read stdin as bytes: a piped .msg is binary, and even for .eml this
+        # avoids the console codepage rewriting the mail before we parse it.
+        raw = (sys.stdin.buffer.read() if hasattr(sys.stdin, "buffer")
+               else sys.stdin.read().encode("utf-8", "replace"))
+        email = _parser.parse_bytes(raw)
         src = "(stdin)"
     else:
         p = Path(src)
@@ -58,7 +62,7 @@ def cmd_batch(args) -> int:
         return 2
     rows = []
     failed = 0
-    for f in sorted(d.glob("*.eml")):
+    for f in sorted(p for g in _parser.MAIL_GLOBS for p in d.glob(g)):
         try:
             email = _parser.parse_file(f)
             rows.append((f.name, analyzer.analyze(email, online=args.online, ctx=ctx),
@@ -147,8 +151,8 @@ def build_parser() -> argparse.ArgumentParser:
                              "PHISHINGTOOL_DATA ortam degiskeni de gecerli)")
 
     a = sub.add_parser("analyze", parents=[common],
-                       help="Tek bir .eml dosyasini veya stdin'i analiz et")
-    a.add_argument("input", help=".eml yolu veya '-' (stdin ham e-posta)")
+                       help="Tek bir .eml/.msg dosyasini veya stdin'i analiz et")
+    a.add_argument("input", help=".eml veya .msg yolu, ya da '-' (stdin ham e-posta)")
     a.add_argument("--online", action="store_true",
                    help="DNS/WHOIS/itibar sorgularini etkinlestir (ag kullanir)")
     a.add_argument("--json", action="store_true", help="JSON cikti")
@@ -158,7 +162,7 @@ def build_parser() -> argparse.ArgumentParser:
     a.set_defaults(func=cmd_analyze)
 
     b = sub.add_parser("batch", parents=[common],
-                       help="Bir klasordeki tum .eml dosyalarini tara")
+                       help="Bir klasordeki tum .eml/.msg dosyalarini tara")
     b.add_argument("dir", help="Klasor yolu")
     b.add_argument("--online", action="store_true")
     b.add_argument("--json", action="store_true")

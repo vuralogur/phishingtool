@@ -1,4 +1,4 @@
-"""Parse a .eml file / raw email text into a normalized ParsedEmail."""
+"""Parse a .eml / .msg file or raw email text into a normalized ParsedEmail."""
 from __future__ import annotations
 from dataclasses import dataclass
 from email import policy
@@ -8,9 +8,14 @@ from html.parser import HTMLParser
 from pathlib import Path
 import re
 
+from . import msg as _msg
 from .util import domain_of_address
 
 _URL_RE = re.compile(r"""https?://[^\s"'<>)\]]+""", re.IGNORECASE)
+
+# The mail files this parser accepts - one list so a folder scan (batch, bench)
+# and the parser can never disagree about what counts as a mail.
+MAIL_GLOBS = ("*.eml", "*.msg")
 
 
 @dataclass
@@ -51,6 +56,12 @@ class ParsedEmail:
     html_body: str
     links: list
     attachments: list
+    # Provenance: "eml" is a raw RFC 822 file, "msg" came out of an Outlook
+    # container. header_source says whether the headers are the real internet
+    # headers ("rfc822") or were rebuilt from MAPI properties ("mapi") - in the
+    # latter case SPF/DKIM/DMARC and Received are absent from the file itself.
+    source_format: str = "eml"
+    header_source: str = "rfc822"
 
 
 class _AnchorExtractor(HTMLParser):
@@ -166,7 +177,8 @@ def _attachments(msg):
     return out
 
 
-def _build(msg, raw: str, raw_bytes: bytes) -> ParsedEmail:
+def _build(msg, raw: str, raw_bytes: bytes,
+           source_format: str = "eml", header_source: str = "rfc822") -> ParsedEmail:
     from_disp, from_addr = _first_addr(msg.get("From", ""))
     _, reply_to = _first_addr(msg.get("Reply-To", ""))
     _, return_path = _first_addr(msg.get("Return-Path", ""))
@@ -192,10 +204,19 @@ def _build(msg, raw: str, raw_bytes: bytes) -> ParsedEmail:
         html_body=html_body,
         links=_extract_links(html_body, text_body),
         attachments=_attachments(msg),
+        source_format=source_format,
+        header_source=header_source,
     )
 
 
 def parse_bytes(raw: bytes) -> ParsedEmail:
+    # An Outlook .msg is an OLE2 container, not RFC 822 text: convert it first so
+    # every check downstream keeps seeing one shape of email.
+    if _msg.is_msg(raw):
+        message, header_source = _msg.to_message(raw)
+        rebuilt = message.as_bytes()
+        return _build(message, rebuilt.decode("utf-8", "replace"), rebuilt,
+                      source_format="msg", header_source=header_source)
     msg = BytesParser(policy=policy.default).parsebytes(raw)
     return _build(msg, raw.decode("utf-8", "replace"), raw)
 

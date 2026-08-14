@@ -4,7 +4,7 @@
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-Bir e-postayı (`.eml` dosyası, ham metin veya stdin) alıp **phishing göstergelerini**
+Bir e-postayı (`.eml` / `.msg` dosyası, ham metin veya stdin) alıp **phishing göstergelerini**
 statik olarak analiz eden, **açıklanabilir bir risk skoru** veren komut satırı aracı.
 Kara kutu değil: her puan tetiklenen bir kurala bağlıdır ve kanıtıyla listelenir.
 
@@ -53,7 +53,10 @@ cat mail.eml | python -m detector.cli analyze -
 # IOC listesi de ver (URL / domain / IP / e-posta / ek SHA256)
 python -m detector.cli analyze mail.eml --iocs
 
-# Bir klasördeki tüm .eml dosyaları (CSV özet)
+# Outlook'tan sürüklenen .msg de aynı komut (ek bağımlılık yok)
+python -m detector.cli analyze mail.msg
+
+# Bir klasördeki tüm .eml/.msg dosyaları (CSV özet)
 python -m detector.cli batch tests/samples
 python -m detector.cli batch klasor/ --verbose   # bozuk dosyalar için traceback
 
@@ -78,7 +81,7 @@ pip install customtkinter
 python run_gui.py
 ```
 
-- **Dosya Seç (.eml)** ile e-posta yükle veya ham metni kutuya **yapıştır**.
+- **Dosya Seç (.eml/.msg)** ile e-posta yükle veya ham metni kutuya **yapıştır**.
 - Sonuç: renkli **verdict rozeti** (low→critical) + SPF/DKIM/DMARC + **skor kırılımı**
   (sert/yumuşak toplam, çarpan, verdict nedeni) + severity renkli **gösterge kartları**
   (kanıt + açıklama).
@@ -348,7 +351,7 @@ Eksik dosya hata değil — o sözlük boş kabul edilir.
 ## Testler
 
 ```bash
-python -m pytest -q      # 79 test
+python -m pytest -q      # 93 test
 ```
 
 Her push ve PR'da GitHub Actions bunları çalıştırır: **opsiyonel bağımlılık
@@ -363,7 +366,8 @@ detector/
   cli.py          # komut satırı (analyze / batch / bench, --iocs, --verbose)
   iocs.py         # IOC çıkarımı: URL/domain/IP/e-posta/ek SHA256 (+ defang)
   analyzer.py     # orkestratör: parse -> tüm kontroller -> skor
-  parser.py       # .eml / ham metin -> normalize ParsedEmail
+  parser.py       # .eml / .msg / ham metin -> normalize ParsedEmail
+  msg.py          # Outlook .msg (OLE2/CFB + MAPI) okuyucu — saf stdlib
   checks/         # headers, urls, content, attachments
   indicators.py   # Indicator (kanıt birimi) + otomatik ATT&CK etiketi
   mitre.py        # gösterge -> MITRE ATT&CK tekniği eşlemesi
@@ -381,7 +385,6 @@ pyproject.toml    # paket metadata + `phishingtool` konsol komutu
 
 ## Yol haritası (opsiyonel)
 
-- `.msg` (Outlook) desteği — `extract_msg` opsiyonel, parser'a ikinci giriş
 - HTML rapor (`--html rapor.html`) — tek dosya, gömülü CSS
 - Received hop tablosu — veri `auth_verify.py`'de var, raporlanmıyor
 - `config.toml` (tomllib) — ağırlık/eşik/`SOFT_IDS` override
@@ -390,6 +393,20 @@ pyproject.toml    # paket metadata + `phishingtool` konsol komutu
 - Redirect zinciri takibi (opt-in, sandboxed)
 
 ## Gelişmiş özellikler
+
+### Outlook `.msg` desteği
+
+`.eml` ile aynı: `analyze`, `batch`, `bench` ve GUI dosyayı imzasından tanır
+(`analyze mail.msg`). Okuyucu **saf standart kütüphane** (`detector/msg.py`):
+OLE2/CFB kapsayıcısı ayrıştırılır, MAPI özellikleri ve ek baytları çıkarılır —
+`extract_msg` gibi bir bağımlılık **gerekmez**, hiçbir şey çalıştırılmaz.
+
+Outlook maili iki türlü kaydeder; rapor hangisi olduğunu **söyler**:
+
+| Dosyanın durumu | Sonuç |
+|---|---|
+| İnternet başlıkları var (`PR_TRANSPORT_MESSAGE_HEADERS`) | Received / Authentication-Results / DKIM-Signature gerçek — bütün kontroller tam güçte |
+| Başlıklar yok | Başlıklar MAPI alanlarından kurulur (gönderen, "adına" gönderen, alıcılar, konu, tarih). Kimlik, URL, içerik ve ek kontrolleri normal çalışır. SPF/DKIM/DMARC ve Received zinciri **dosyada hiç bulunmaz** → `msg_no_transport_headers` bilgi göstergesi çıkar: **0 puan**, verdict'i etkilemez ve "başarısız doğrulama" sayılmaz. Kaynak sunucu analizi gerekiyorsa maili `.eml` olarak dışa aktarın. |
 
 ### Gelişmiş kimlik doğrulama (Tier 1, `--online`)
 

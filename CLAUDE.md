@@ -5,8 +5,8 @@ Amaç: ne yapıldığını, sınırları ve mimariyi tek bakışta netleştirmek
 
 ## Proje nedir
 
-**Savunma amaçlı phishing e-posta tespit/analiz aracı.** Bir `.eml` dosyasını
-veya ham e-posta metnini **statik** analiz eder, ağırlıklı ve açıklanabilir bir
+**Savunma amaçlı phishing e-posta tespit/analiz aracı.** Bir `.eml`/`.msg`
+dosyasını veya ham e-posta metnini **statik** analiz eder, ağırlıklı ve açıklanabilir bir
 risk skoru üretir (`low` / `medium` / `high` / `critical`). Türkçe arayüz/çıktı.
 
 - CLI: `detector/` paketi
@@ -28,8 +28,9 @@ risk skoru üretir (`low` / `medium` / `high` / `critical`). Türkçe arayüz/ç
 ```bash
 # kurulum (opsiyonel; `phishingtool` konsol komutunu verir)
 pip install -e ".[dev]"          # extras: cli / online / deep / gui / dev
-# tek dosya  (`phishingtool analyze ...` ile birebir aynı)
+# tek dosya  (`phishingtool analyze ...` ile birebir aynı; .msg de olur)
 python -m detector.cli analyze mail.eml
+python -m detector.cli analyze mail.msg
 python -m detector.cli analyze mail.eml --online --json
 # IOC listesi (blocklist/SIEM): metin defanged, --json/CSV ham
 python -m detector.cli analyze mail.eml --iocs
@@ -40,15 +41,24 @@ python -m detector.cli bench corpus/ [--threshold high] [--json]
 # GUI
 python run_gui.py
 # testler
-python -m pytest -q      # 79 test (CI: 3.11–3.14 Linux + 3.12 Windows)
+python -m pytest -q      # 93 test (CI: 3.11–3.14 Linux + 3.12 Windows)
 ```
 
 ## Mimari
 
 `analyzer.analyze()` akışı: **parse → tüm check'ler → score → report**.
 
-- `detector/parser.py` — `.eml`/metin → `ParsedEmail` (headers, from/reply/return,
-  bodies, `links`, `attachments` [her ekin `payload` bytes'ı derin analiz için saklanır]).
+- `detector/parser.py` — `.eml`/`.msg`/metin → `ParsedEmail` (headers, from/reply/return,
+  bodies, `links`, `attachments` [her ekin `payload` bytes'ı derin analiz için saklanır],
+  `source_format` `eml|msg`, `header_source` `rfc822|mapi`). `parse_bytes()` OLE2
+  imzasını görünce `.msg` dalına girer — `MAIL_GLOBS` klasör taramalarının tek kaynağı.
+- `detector/msg.py` — Outlook `.msg` okuyucu, **saf stdlib** (bağımlılık yok):
+  MS-CFB kapsayıcı (FAT/mini-FAT/directory) + MAPI özellikleri → `EmailMessage`.
+  `is_msg()`, `to_message() -> (msg, header_source)`, `MsgError`. Transport
+  header'lar (`007D`) varsa gerçek Received/auth kullanılır; yoksa başlıklar MAPI
+  alanlarından kurulur (`5D02`/`0042` From, `39FE`+`0C15` alıcılar, `0039` FILETIME
+  tarih) ve `header_source="mapi"` döner. Ekler baytı baytına korunur; gömülü
+  mesajlar (stream değil storage) atlanır. Hiçbir şey çalıştırılmaz/çözülmez.
 - `detector/analyzer.py` — orkestrasyon. `build_context()` veri dosyalarını yükler.
   Analiz başında **güven bağlamı** hesaplar (`auth_level`, `from_rdom`) ve hem
   check'lere (ctx içinde) hem `score()`'a geçirir.
@@ -87,7 +97,7 @@ python -m pytest -q      # 79 test (CI: 3.11–3.14 Linux + 3.12 Windows)
 
 | Modül | Ne bakar | Not |
 |-------|----------|-----|
-| `checks/headers.py` | SPF/DKIM/DMARC özeti, from↔reply/return-path uyuşmazlığı, `display_name_spoof` | online: `no_spf_record` |
+| `checks/headers.py` | SPF/DKIM/DMARC özeti, from↔reply/return-path uyuşmazlığı, `display_name_spoof`, `msg_no_transport_headers` | online: `no_spf_record` |
 | `checks/auth_verify.py` | **Tier 1** kripto: DKIM imza doğrulama, canlı SPF, DMARC politikası, Received/IP adli | online-gated (Received adli offline) |
 | `checks/urls.py` | `anchor_href_mismatch` (first-party farkında), `ip_url`, punycode/homograph, shortener, suspicious_tld, `lookalike_domain` | |
 | `checks/url_deep.py` | **Tier 2**: `open_redirect`, `combosquat_domain`, `brand_in_subdomain`, `confusable_brand` (IDN), `random_host` (DGA) | first-party farkında |
@@ -153,8 +163,12 @@ Sözlükler **paket içinde** (wheel'e girer, `phishingtool` her dizinden bulur)
   YAML/TOML config, GUI önizleme, PDF rapor hâlâ PENDING.
 - **MITRE ATT&CK etiketi** (`detector/mitre.py`) — **DONE**; `batch` hata
   raporlaması (`error` kolonu + `--verbose` + exit 1) — **DONE**.
-  Sırada: `.msg` (Outlook) desteği, HTML rapor (`--html`), Received hop tablosu,
-  `config.toml` ile ağırlık/eşik override.
+- **`.msg` (Outlook) desteği** — **DONE** (`detector/msg.py`, bağımlılıksız).
+  Başlıksız `.msg`'de `msg_no_transport_headers` bilgi göstergesi çıkar (ağırlık 0,
+  `SOFT_IDS` + `NO_TECHNIQUE`); `auth_verify` o durumda `no_received_headers`
+  üretmez — eksiklik dosyanın, mailin değil.
+  Sırada: HTML rapor (`--html`), Received hop tablosu, `config.toml` ile
+  ağırlık/eşik override.
 
 Örnek: `python -m detector.cli analyze tests/samples/phish_tier2.eml` → critical 100.
 

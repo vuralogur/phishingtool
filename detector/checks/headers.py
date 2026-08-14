@@ -30,6 +30,17 @@ def run(email, online=False, ctx=None):
     out = []
     a = summary(email)
 
+    if getattr(email, "header_source", "rfc822") == "mapi":
+        # Outlook saved this .msg without PR_TRANSPORT_MESSAGE_HEADERS. Say so
+        # instead of letting "spf=none, dkim=none, no Received" read like a
+        # finding: the records are missing from the FILE, not from the mail.
+        out.append(Indicator("msg_no_transport_headers", "auth", "low", 0,
+            ".msg icinde internet basliklari (PR_TRANSPORT_MESSAGE_HEADERS) yok",
+            "Basliklar Outlook'un MAPI alanlarindan kuruldu: gonderen, konu, govde, "
+            "linkler ve ekler normal analiz edildi; SPF/DKIM/DMARC ve Received "
+            "zinciri bu dosyada hic bulunmadigi icin dogrulanamiyor - basarisiz "
+            "sayilmadi. Kaynak sunucu analizi icin maili .eml olarak disari aktarin."))
+
     if a["spf"] in ("fail", "softfail"):
         sev, w = ("high", 15) if a["spf"] == "fail" else ("medium", 8)
         out.append(Indicator("spf_" + a["spf"], "auth", sev, w,

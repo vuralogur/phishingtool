@@ -126,6 +126,8 @@ NO_TECHNIQUE = frozenset({
     "no_dmarc_record",
     "no_received_headers",
     "private_origin_ip",
+    # A gap in what Outlook stored in the .msg - a fact about the file format.
+    "msg_no_transport_headers",
 })
 
 

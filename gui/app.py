@@ -41,7 +41,7 @@ class App(ctk.CTk):
     def _build(self):
         top = ctk.CTkFrame(self)
         top.pack(fill="x", padx=12, pady=(12, 6))
-        ctk.CTkButton(top, text="Dosya Seç (.eml)", command=self._pick_file).pack(
+        ctk.CTkButton(top, text="Dosya Seç (.eml/.msg)", command=self._pick_file).pack(
             side="left", padx=6, pady=8)
         self.online_var = ctk.BooleanVar(value=False)
         ctk.CTkSwitch(top, text="Online (DNS/WHOIS/itibar)", variable=self.online_var).pack(
@@ -75,7 +75,8 @@ class App(ctk.CTk):
     def _pick_file(self):
         path = filedialog.askopenfilename(
             title="E-posta seç",
-            filetypes=[("E-posta (.eml)", "*.eml"), ("Tüm dosyalar", "*.*")])
+            filetypes=[("E-posta (.eml/.msg)", "*.eml *.msg"),
+                       ("Tüm dosyalar", "*.*")])
         if path:
             self._run(lambda: analyzer.analyze_file(
                 path, online=self.online_var.get(), ctx=self._ctx), source=path)

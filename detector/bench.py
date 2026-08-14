@@ -1,7 +1,7 @@
 """Benchmark harness: measure detection quality against a labelled corpus.
 
 Without numbers, a tuning change is a guess. This module runs the analyzer over
-a folder of labelled .eml files and reports precision / recall / F1 plus the
+a folder of labelled .eml / .msg files and reports precision / recall / F1 plus the
 concrete false positives and false negatives, so a scoring change can be judged
 as an improvement or a regression instead of being argued about.
 
@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import analyzer
+from .parser import MAIL_GLOBS
 from .scoring import SOFT_IDS
 
 # Verdict ordering used to turn a verdict into a binary phish/ham prediction.
@@ -126,7 +127,7 @@ class BenchResult:
     threshold: str
     cases: list
     missing: list = field(default_factory=list)   # labelled but file not found
-    unlabeled: list = field(default_factory=list)  # .eml present, no label
+    unlabeled: list = field(default_factory=list)  # mail present, no label
 
     def metrics(self, threshold=None) -> Metrics:
         m = Metrics()
@@ -199,14 +200,14 @@ def load_labels_csv(path) -> dict:
 
 
 def labels_from_folders(root) -> dict:
-    """Fallback layout: corpus/phish/*.eml and corpus/ham/*.eml."""
+    """Fallback layout: corpus/phish/ and corpus/ham/ (.eml or .msg)."""
     root = Path(root)
     labels = {}
     for sub in sorted(p for p in root.iterdir() if p.is_dir()):
         label = normalize_label(sub.name)
         if not label:
             continue
-        for f in sorted(sub.rglob("*.eml")):
+        for f in sorted(p for g in MAIL_GLOBS for p in sub.rglob(g)):
             labels[str(f.relative_to(root)).replace("\\", "/")] = label
     return labels
 
@@ -264,7 +265,7 @@ def run(corpus_dir, labels=None, labels_path=None, threshold="medium",
     unlabeled = sorted(
         rel for rel in (
             str(p.relative_to(corpus_dir)).replace("\\", "/")
-            for p in corpus_dir.rglob("*.eml")
+            for g in MAIL_GLOBS for p in corpus_dir.rglob(g)
         ) if rel not in labelled
     )
     return BenchResult(threshold=threshold, cases=cases, missing=missing,

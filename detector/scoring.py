@@ -43,7 +43,7 @@ SOFT_IDS = {
     "from_returnpath_mismatch",
     # informational / online-record absence
     "no_spf_record", "no_dmarc_record", "no_received_headers",
-    "private_origin_ip", "qr_code_url",
+    "private_origin_ip", "qr_code_url", "msg_no_transport_headers",
 }
 
 # Soft-signal weight multiplier by authentication level.
