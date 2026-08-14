@@ -34,6 +34,8 @@ python -m detector.cli analyze mail.msg
 python -m detector.cli analyze mail.eml --online --json
 # IOC listesi (blocklist/SIEM): metin defanged, --json/CSV ham
 python -m detector.cli analyze mail.eml --iocs
+# tek dosyalık HTML rapor (gömülü CSS, JS/dış kaynak yok, mail içeriği tıklanamaz)
+python -m detector.cli analyze mail.eml --iocs --html rapor.html
 # klasör (CSV'nin son kolonu `error`; hata varsa exit 1, --verbose traceback verir)
 python -m detector.cli batch klasor/ [--iocs] [--verbose]
 # etiketli korpusa karşı ölçüm (precision/recall/F1 + hata listesi)
@@ -41,7 +43,7 @@ python -m detector.cli bench corpus/ [--threshold high] [--json]
 # GUI
 python run_gui.py
 # testler
-python -m pytest -q      # 93 test (CI: 3.11–3.14 Linux + 3.12 Windows)
+python -m pytest -q      # 105 test (CI: 3.11–3.14 Linux + 3.12 Windows)
 ```
 
 ## Mimari
@@ -90,6 +92,12 @@ python -m pytest -q      # 93 test (CI: 3.11–3.14 Linux + 3.12 Windows)
   `breakdown_lines()` skor kırılımının iki Türkçe satırı (CLI + GUI ortak kullanır);
   `technique_lines()` ATT&CK bloğu (CLI) / `technique_summary_line()` tek satır (GUI);
   `print_bench` / `bench_to_json` benchmark çıktısı.
+- `detector/html_report.py` — `to_html(result, source, iocs, email, when)`: tek
+  dosyalık HTML (gömülü CSS). **JS yok, dış kaynak yok**; mail kaynaklı her değer
+  `html.escape`'ten geçer ve **asla `href` olmaz** — sayfadaki tek bağlantı
+  `attack.mitre.org`. IOC bloğu terminaldeki gibi defanged (`report.iocs_lines`
+  ortak kullanılır). CLI: `analyze --html DOSYA`; bilgi satırı stderr'e gider ki
+  `--json` ile stdout geçerli JSON kalsın, yazma hatasında exit 2.
 - `detector/cli.py` — `batch` hata sebebini **yutmaz**: satır `error` kolonuna +
   stderr'e yazılır, `--verbose` traceback ekler, en az bir hata varsa exit 1.
 
@@ -167,8 +175,10 @@ Sözlükler **paket içinde** (wheel'e girer, `phishingtool` her dizinden bulur)
   Başlıksız `.msg`'de `msg_no_transport_headers` bilgi göstergesi çıkar (ağırlık 0,
   `SOFT_IDS` + `NO_TECHNIQUE`); `auth_verify` o durumda `no_received_headers`
   üretmez — eksiklik dosyanın, mailin değil.
-  Sırada: HTML rapor (`--html`), Received hop tablosu, `config.toml` ile
-  ağırlık/eşik override.
+- **HTML rapor** (`--html`) — **DONE** (`detector/html_report.py`; analyze
+  komutunda, tek dosya, JS/dış kaynak yok, mail içeriği tıklanamaz).
+  Sırada: Received hop tablosu, `config.toml` ile ağırlık/eşik override.
+  (`batch --html` henüz yok — istenirse tek sayfalık özet olarak eklenebilir.)
 
 Örnek: `python -m detector.cli analyze tests/samples/phish_tier2.eml` → critical 100.
 

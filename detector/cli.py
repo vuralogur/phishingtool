@@ -1,6 +1,6 @@
 """Command-line entrypoint.
 
-  phishingtool analyze <file.eml|.msg|->  [--online] [--json] [--iocs]
+  phishingtool analyze <file.eml|.msg|->  [--online] [--json] [--iocs] [--html DOSYA]
   phishingtool batch   <dir>              [--online] [--json] [--iocs] [--verbose]
   phishingtool bench   <corpus dir>       [--threshold high] [--json]
 
@@ -15,7 +15,8 @@ import sys
 import traceback
 from pathlib import Path
 
-from . import analyzer, bench as _bench, iocs as _iocs, parser as _parser, report
+from . import (analyzer, bench as _bench, html_report as _html, iocs as _iocs,
+               parser as _parser, report)
 
 # Windows legacy consoles default to a regional codepage (e.g. cp1254) that
 # cannot encode emoji / some characters. Force UTF-8 so output never crashes.
@@ -45,6 +46,16 @@ def cmd_analyze(args) -> int:
         email = _parser.parse_file(p)
     result = analyzer.analyze(email, online=args.online, ctx=ctx)
     found = _iocs.collect(email) if args.iocs else None
+    if args.html:
+        try:
+            Path(args.html).write_text(
+                _html.to_html(result, source=src, iocs=found, email=email),
+                encoding="utf-8")
+        except OSError as exc:
+            print("HATA: HTML yazilamadi: " + str(exc), file=sys.stderr)
+            return 2
+        # stderr, so `--json --html` keeps stdout valid JSON.
+        print("HTML rapor yazildi: " + args.html, file=sys.stderr)
     if args.json:
         print(report.to_json(result, source=src, iocs=found))
     else:
@@ -159,6 +170,9 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--iocs", action="store_true",
                    help="IOC listesi ekle: URL/domain/IP/e-posta/ek SHA256 "
                         "(metinde defanged, --json ile ham)")
+    a.add_argument("--html", metavar="DOSYA",
+                   help="Raporu tek dosyalik HTML olarak yaz (gomulu CSS; JS ve "
+                        "dis kaynak yok, mail icerigi tiklanamaz)")
     a.set_defaults(func=cmd_analyze)
 
     b = sub.add_parser("batch", parents=[common],

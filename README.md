@@ -56,6 +56,9 @@ python -m detector.cli analyze mail.eml --iocs
 # Outlook'tan sürüklenen .msg de aynı komut (ek bağımlılık yok)
 python -m detector.cli analyze mail.msg
 
+# Paylaşılabilir tek dosyalık HTML rapor (gömülü CSS; JS/dış kaynak yok)
+python -m detector.cli analyze mail.eml --iocs --html rapor.html
+
 # Bir klasördeki tüm .eml/.msg dosyaları (CSV özet)
 python -m detector.cli batch tests/samples
 python -m detector.cli batch klasor/ --verbose   # bozuk dosyalar için traceback
@@ -351,7 +354,7 @@ Eksik dosya hata değil — o sözlük boş kabul edilir.
 ## Testler
 
 ```bash
-python -m pytest -q      # 93 test
+python -m pytest -q      # 105 test
 ```
 
 Her push ve PR'da GitHub Actions bunları çalıştırır: **opsiyonel bağımlılık
@@ -374,6 +377,7 @@ detector/
   scoring.py      # ağırlıklı, açıklanabilir skor -> verdict + skor kırılımı
   bench.py        # etiketli korpus -> precision / recall / F1 / hata listesi
   report.py       # rich tablo / düz metin / JSON çıktı
+  html_report.py  # tek dosyalık HTML rapor (gömülü CSS, JS yok)
   reputation.py   # opsiyonel VirusTotal (online)
   data/           # sözlükler (paketle birlikte kurulur)
 gui/              # CustomTkinter masaüstü arayüz
@@ -385,7 +389,6 @@ pyproject.toml    # paket metadata + `phishingtool` konsol komutu
 
 ## Yol haritası (opsiyonel)
 
-- HTML rapor (`--html rapor.html`) — tek dosya, gömülü CSS
 - Received hop tablosu — veri `auth_verify.py`'de var, raporlanmıyor
 - `config.toml` (tomllib) — ağırlık/eşik/`SOFT_IDS` override
 - Web UI (FastAPI): e-posta yapıştır/yükle → görsel rapor
@@ -393,6 +396,25 @@ pyproject.toml    # paket metadata + `phishingtool` konsol komutu
 - Redirect zinciri takibi (opt-in, sandboxed)
 
 ## Gelişmiş özellikler
+
+### HTML rapor (`--html`)
+
+```bash
+python -m detector.cli analyze mail.eml --iocs --html rapor.html
+```
+
+Tek dosya: CSS gömülü, **JavaScript yok, dış kaynak yok** — raporu açmak hiçbir
+istek yapmaz. İçerik terminaldekinin aynısı: verdict rozeti, skor kırılımı,
+e-posta kimliği (gönderen/konu/tarih), gösterge tablosu, ATT&CK bloğu ve
+`--iocs` verildiyse IOC listesi.
+
+Güvenlik kuralı: **maile ait hiçbir değer tıklanabilir değildir.** Konu, kanıt
+ve IOC'ler kaçışlanmış düz metindir (IOC'ler ayrıca defanged); sayfadaki tek
+bağlantı `attack.mitre.org` teknik sayfalarıdır. Raporu açan analist, incelediği
+kimlik-hasadı sayfasına bir tık uzakta olmamalı.
+
+`--json` ile birlikte kullanılabilir: bilgi satırı stderr'e gider, stdout geçerli
+JSON kalır.
 
 ### Outlook `.msg` desteği
 
