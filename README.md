@@ -53,6 +53,9 @@ cat mail.eml | python -m detector.cli analyze -
 # IOC listesi de ver (URL / domain / IP / e-posta / ek SHA256)
 python -m detector.cli analyze mail.eml --iocs
 
+# Mailin geçtiği sunucuları hop hop göster (Received zinciri, ağ kullanmaz)
+python -m detector.cli analyze mail.eml --hops
+
 # Outlook'tan sürüklenen .msg de aynı komut (ek bağımlılık yok)
 python -m detector.cli analyze mail.msg
 
@@ -86,11 +89,12 @@ python run_gui.py
 
 - **Dosya Seç (.eml/.msg)** ile e-posta yükle veya ham metni kutuya **yapıştır**.
 - Sonuç: renkli **verdict rozeti** (low→critical) + SPF/DKIM/DMARC + **skor kırılımı**
-  (sert/yumuşak toplam, çarpan, verdict nedeni) + severity renkli **gösterge kartları**
+  (sert/yumuşak toplam, çarpan, verdict nedeni) + tek satırlık **Received özeti**
+  (hop sayısı, köken IP, uyarılar) + severity renkli **gösterge kartları**
   (kanıt + açıklama).
 - **Online** anahtarı DNS/WHOIS/itibar sorgularını açar; analiz arka planda çalışır,
   pencere donmaz.
-- **JSON Kaydet** ile raporu dosyaya yaz.
+- **JSON Kaydet** ile raporu dosyaya yaz (Received zinciri de içinde).
 
 Motor (`detector/`) GUI'den bağımsızdır; CLI ve GUI aynı `analyzer` API'sini kullanır.
 
@@ -136,6 +140,47 @@ IOC listesi (defanged — tıklanamaz; ham değerler için --json):
   engellemek kurbanın kendi bankasını engellemek olurdu.
 
 Hiçbir şey çözümlenmez, indirilmez, çalıştırılmaz — sadece ayrıştırılmış metin.
+
+## Received hop tablosu — `--hops`
+
+Bir mailin nereden geldiği tek satırda yazmaz: `Received` başlıkları mailin
+geçtiği her sunucuyu yığın halinde taşır. `--hops` bu yığını **yolculuk sırasına**
+çevirir (en eski hop = mailin internete girdiği yer) ve her hop için ne
+duyurulduğunu, alıcı sunucunun ne gördüğünü yan yana koyar:
+
+```bash
+python -m detector.cli analyze mail.eml --hops           # rapor + hop tablosu
+python -m detector.cli analyze mail.eml --hops --json    # yapısal, otomasyon
+python -m detector.cli analyze mail.eml --hops --html rapor.html
+```
+
+```
+Received zinciri — 2 hop (en eski önce):
+  1. 2026-08-14 09:59:58 +0300
+     kimden: mail.evil.tk  ·  ters ad: host9.bad.net  ·  45.146.164.110
+     kime  : mx.example.com  ·  ESMTP
+     ! duyurulan ad, alıcı sunucunun yazdığı ters ad ile uyuşmuyor
+     ! şifresiz teslim (TLS yok)
+  2. 2026-08-14 10:00:12 +0300  (+14 sn)
+     kimden: mx.example.com  ·  ters ad: mx.example.com  ·  93.184.216.34
+     kime  : imap.example.com  ·  ESMTPS (TLS)
+  Not: yalnızca güvendiğiniz ilk sunucunun üstündeki hoplar güvenilirdir — alt
+  hoplar gönderen tarafından uydurulmuş olabilir.
+```
+
+Hop başına çıkarılanlar: zaman damgası ve bir öncekine göre **gecikme**, duyurulan
+ad (HELO iddiası), alıcının yazdığı **ters ad**, IP, hedef sunucu, protokol/TLS.
+Uyarılar: `rdns_mismatch`, `private_ip`, `no_tls`, `big_delay`, `clock_skew`,
+`unparsed` (okunamayan satır yine de gösterilir — sessizce düşmez).
+
+Üç sınır:
+
+- **DNS yok.** Karşılaştırılan ters ad, alıcı MTA'nın zaten başlığa yazdığı addır;
+  bu tablo hiçbir şeyi çözümlemez, `--online` bile gerektirmez.
+- **Skoru değiştirmez.** ATT&CK etiketi gibi saf metadata: verdict'i açıklar,
+  belirlemez.
+- **Kanıt, ispat değil.** Güven sınırının altındaki hoplar gönderen tarafından
+  yazılmış olabilir; tablo bunu her seferinde söyler.
 
 ## MITRE ATT&CK etiketi
 
@@ -366,8 +411,9 @@ kurulmadan** Python 3.11/3.12/3.13/3.14 (Linux) + 3.12 (Windows) — yeşil kalm
 
 ```
 detector/
-  cli.py          # komut satırı (analyze / batch / bench, --iocs, --verbose)
+  cli.py          # komut satırı (analyze / batch / bench, --iocs, --hops, --verbose)
   iocs.py         # IOC çıkarımı: URL/domain/IP/e-posta/ek SHA256 (+ defang)
+  received.py     # Received zinciri -> hop listesi (gecikme, ters ad, TLS) — DNS yok
   analyzer.py     # orkestratör: parse -> tüm kontroller -> skor
   parser.py       # .eml / .msg / ham metin -> normalize ParsedEmail
   msg.py          # Outlook .msg (OLE2/CFB + MAPI) okuyucu — saf stdlib
@@ -389,7 +435,6 @@ pyproject.toml    # paket metadata + `phishingtool` konsol komutu
 
 ## Yol haritası (opsiyonel)
 
-- Received hop tablosu — veri `auth_verify.py`'de var, raporlanmıyor
 - `config.toml` (tomllib) — ağırlık/eşik/`SOFT_IDS` override
 - Web UI (FastAPI): e-posta yapıştır/yükle → görsel rapor
 - Ek itibar kaynakları (PhishTank, Google Safe Browsing)
@@ -405,8 +450,8 @@ python -m detector.cli analyze mail.eml --iocs --html rapor.html
 
 Tek dosya: CSS gömülü, **JavaScript yok, dış kaynak yok** — raporu açmak hiçbir
 istek yapmaz. İçerik terminaldekinin aynısı: verdict rozeti, skor kırılımı,
-e-posta kimliği (gönderen/konu/tarih), gösterge tablosu, ATT&CK bloğu ve
-`--iocs` verildiyse IOC listesi.
+e-posta kimliği (gönderen/konu/tarih), gösterge tablosu, ATT&CK bloğu, `--hops`
+verildiyse Received hop tablosu ve `--iocs` verildiyse IOC listesi.
 
 Güvenlik kuralı: **maile ait hiçbir değer tıklanabilir değildir.** Konu, kanıt
 ve IOC'ler kaçışlanmış düz metindir (IOC'ler ayrıca defanged); sayfadaki tek

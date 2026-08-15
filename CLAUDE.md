@@ -34,6 +34,8 @@ python -m detector.cli analyze mail.msg
 python -m detector.cli analyze mail.eml --online --json
 # IOC listesi (blocklist/SIEM): metin defanged, --json/CSV ham
 python -m detector.cli analyze mail.eml --iocs
+# Received hop tablosu (yolculuk sırası, gecikme, ters ad, TLS) — DNS yok
+python -m detector.cli analyze mail.eml --hops
 # tek dosyalık HTML rapor (gömülü CSS, JS/dış kaynak yok, mail içeriği tıklanamaz)
 python -m detector.cli analyze mail.eml --iocs --html rapor.html
 # klasör (CSV'nin son kolonu `error`; hata varsa exit 1, --verbose traceback verir)
@@ -43,7 +45,7 @@ python -m detector.cli bench corpus/ [--threshold high] [--json]
 # GUI
 python run_gui.py
 # testler
-python -m pytest -q      # 105 test (CI: 3.11–3.14 Linux + 3.12 Windows)
+python -m pytest -q      # 130 test (CI: 3.11–3.14 Linux + 3.12 Windows)
 ```
 
 ## Mimari
@@ -87,16 +89,29 @@ python -m pytest -q      # 105 test (CI: 3.11–3.14 Linux + 3.12 Windows)
   attachments+sha256) + `defang()`. HTML'de **yalnız attribute içindeki** URL'ler
   sayılır (anchor *metni* IOC değil — meşru markayı engellememek için); Received
   köken IP'sinde özel/ayrılmış aralıklar elenir. Metin defanged, JSON/CSV ham.
-- `detector/report.py` — rich tablo (yoksa düz metin), `to_json(result, source, iocs)`,
+- `detector/received.py` — `Received` yığını → **yolculuk sırasına** dizilmiş hop
+  listesi. `parse(email) -> list[Hop]` (`index` 1 = mailin girdiği yer),
+  `summary(hops)` (hop sayısı, köken IP, süre, uyarılar), `Hop.to_dict()`.
+  Hop alanları: duyurulan ad (HELO iddiası), alıcının yazdığı **ters ad**, IP,
+  hedef, protokol/`tls`, `time`, önceki hoptan `delay`, `flags`, `raw`.
+  Uyarılar: `rdns_mismatch`, `private_ip`, `no_tls` (yalnız public IP'li gerçek
+  internet hopunda), `big_delay` (>300 sn), `clock_skew`, `unparsed` (okunamayan
+  satır düşürülmez, ham hâliyle taşınır). **DNS yok** — ters ad zaten başlıkta
+  yazılıdır; **skoru etkilemez**, ATT&CK etiketi gibi saf metadata.
+- `detector/report.py` — rich tablo (yoksa düz metin), `to_json(result, source, iocs, hops)`,
   `iocs_lines`/`print_iocs`;
   `breakdown_lines()` skor kırılımının iki Türkçe satırı (CLI + GUI ortak kullanır);
   `technique_lines()` ATT&CK bloğu (CLI) / `technique_summary_line()` tek satır (GUI);
+  `received_lines()` hop bloğu + `_received_rich()` rich tablosu /
+  `received_summary_line()` tek satır (GUI); `HOP_TRUST_NOTE` + `hop_flag_text()`
+  HTML ile ortak. `hops=None` "sorulmadı", `[]` "soruldu, zincir yok" demek;
   `print_bench` / `bench_to_json` benchmark çıktısı.
 - `detector/html_report.py` — `to_html(result, source, iocs, email, when)`: tek
   dosyalık HTML (gömülü CSS). **JS yok, dış kaynak yok**; mail kaynaklı her değer
   `html.escape`'ten geçer ve **asla `href` olmaz** — sayfadaki tek bağlantı
   `attack.mitre.org`. IOC bloğu terminaldeki gibi defanged (`report.iocs_lines`
-  ortak kullanılır). CLI: `analyze --html DOSYA`; bilgi satırı stderr'e gider ki
+  ortak kullanılır); `--hops` verilmişse Received tablosu da bu sayfada, host/IP
+  değerleri kaçışlanmış metin olarak. CLI: `analyze --html DOSYA`; bilgi satırı stderr'e gider ki
   `--json` ile stdout geçerli JSON kalsın, yazma hatasında exit 2.
 - `detector/cli.py` — `batch` hata sebebini **yutmaz**: satır `error` kolonuna +
   stderr'e yazılır, `--verbose` traceback ekler, en az bir hata varsa exit 1.
@@ -177,8 +192,11 @@ Sözlükler **paket içinde** (wheel'e girer, `phishingtool` her dizinden bulur)
   üretmez — eksiklik dosyanın, mailin değil.
 - **HTML rapor** (`--html`) — **DONE** (`detector/html_report.py`; analyze
   komutunda, tek dosya, JS/dış kaynak yok, mail içeriği tıklanamaz).
-  Sırada: Received hop tablosu, `config.toml` ile ağırlık/eşik override.
   (`batch --html` henüz yok — istenirse tek sayfalık özet olarak eklenebilir.)
+- **Received hop tablosu** (`--hops`) — **DONE** (`detector/received.py`; CLI
+  düz metin + rich, `--json` `received` anahtarı, HTML bölümü, GUI özet satırı).
+  Opt-in bayrak: verilmezse çıktı eskisiyle birebir aynı. Skorlama dokunulmadı.
+  Sırada: `config.toml` ile ağırlık/eşik override.
 
 Örnek: `python -m detector.cli analyze tests/samples/phish_tier2.eml` → critical 100.
 

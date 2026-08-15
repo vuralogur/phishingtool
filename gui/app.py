@@ -10,7 +10,7 @@ from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
-from detector import analyzer, report
+from detector import analyzer, parser as _parser, received as _received, report
 
 SEV_COLORS = {
     "low": "#2fa84f",
@@ -35,6 +35,7 @@ class App(ctk.CTk):
         self._ctx = analyzer.build_context()
         self._last_result = None
         self._last_source = None
+        self._last_hops = None
         self._build()
 
     # ---------- layout ----------
@@ -78,29 +79,30 @@ class App(ctk.CTk):
             filetypes=[("E-posta (.eml/.msg)", "*.eml *.msg"),
                        ("Tüm dosyalar", "*.*")])
         if path:
-            self._run(lambda: analyzer.analyze_file(
-                path, online=self.online_var.get(), ctx=self._ctx), source=path)
+            self._run(lambda: _parser.parse_file(path), source=path)
 
     def _analyze_text(self):
         text = self.textbox.get("1.0", "end").strip()
         if not text:
             messagebox.showinfo("Bilgi", "Önce ham e-posta metnini yapıştırın.")
             return
-        self._run(lambda: analyzer.analyze_text(
-            text, online=self.online_var.get(), ctx=self._ctx),
-            source="(yapıştırılan metin)")
+        self._run(lambda: _parser.parse_text(text), source="(yapıştırılan metin)")
 
-    def _run(self, fn, source):
+    def _run(self, parse, source):
+        """``parse`` returns the ParsedEmail; the mail itself is kept so the
+        report can also show what the headers say about the route."""
         self.badge.configure(text="Analiz ediliyor…", fg_color=_BUSY)
         self.save_btn.configure(state="disabled")
+        online = self.online_var.get()   # read on the UI thread, used in worker
 
         def worker():
             try:
-                res = fn()
+                email = parse()
+                res = analyzer.analyze(email, online=online, ctx=self._ctx)
             except Exception as exc:  # parse / analysis error
                 self.after(0, lambda: self._error(str(exc)))
                 return
-            self.after(0, lambda: self._render(res, source))
+            self.after(0, lambda: self._render(res, email, source))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -114,9 +116,10 @@ class App(ctk.CTk):
         self.auth_label.configure(text=msg)
         self._clear_list()
 
-    def _render(self, result, source):
+    def _render(self, result, email, source):
         self._last_result = result
         self._last_source = source
+        self._last_hops = _received.parse(email)
         color = SEV_COLORS.get(result.verdict, _IDLE)
         emoji = VERDICT_EMOJI.get(result.verdict, "")
         self.badge.configure(
@@ -126,11 +129,12 @@ class App(ctk.CTk):
         a = result.auth
         head = ("Kaynak: " + source + "     |     SPF=" + a["spf"]
                 + "   DKIM=" + a["dkim"] + "   DMARC=" + a["dmarc"])
-        # Compact ATT&CK line here (ids only); each card carries its own id.
-        attck = report.technique_summary_line(result)
+        # Compact ATT&CK / route lines here; each card carries its own id.
+        extra = [line for line in (report.technique_summary_line(result),
+                                   report.received_summary_line(self._last_hops))
+                 if line]
         self.auth_label.configure(
-            text="\n".join([head] + report.breakdown_lines(result) +
-                           ([attck] if attck else [])))
+            text="\n".join([head] + report.breakdown_lines(result) + extra))
         self.save_btn.configure(state="normal")
         self._clear_list()
         if not result.indicators:
@@ -169,7 +173,8 @@ class App(ctk.CTk):
             filetypes=[("JSON", "*.json"), ("Tüm dosyalar", "*.*")])
         if path:
             Path(path).write_text(
-                report.to_json(self._last_result, source=self._last_source),
+                report.to_json(self._last_result, source=self._last_source,
+                               hops=self._last_hops),
                 encoding="utf-8")
             messagebox.showinfo("Kaydedildi", path)
 

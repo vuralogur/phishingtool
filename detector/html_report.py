@@ -18,7 +18,8 @@ from datetime import datetime
 from html import escape
 
 from . import mitre
-from .report import breakdown_lines, iocs_lines
+from .report import (HOP_TRUST_NOTE, breakdown_lines, hop_delay_text,
+                     hop_flag_text, hop_time_text, iocs_lines)
 
 _BADGE = {"low": "b-low", "medium": "b-medium", "high": "b-high",
           "critical": "b-critical"}
@@ -139,11 +140,48 @@ def _techniques(result) -> str:
             "\n".join(items) + "</ul>")
 
 
-def to_html(result, source=None, iocs=None, email=None, when=None) -> str:
+def _received(hops) -> str:
+    """The route the mail took. Host names are hostile input: escaped text only."""
+    if hops is None:
+        return ""
+    if not hops:
+        return ('<h2>Received zinciri</h2><p class="note">Başlıkta hiç Received '
+                "satırı yok.</p>")
+    rows = []
+    for hop in hops:
+        sender = _e(hop.from_host or "(ad yok)")
+        if hop.from_rdns:
+            sender += '<div class="cat">ters ad: ' + _e(hop.from_rdns) + "</div>"
+        if hop.from_ip:
+            sender += '<div class="ev">' + _e(hop.from_ip) + "</div>"
+        target = _e(hop.by_host or "(ad yok)")
+        if hop.protocol:
+            target += ('<div class="cat">' + _e(hop.protocol) +
+                       (" (TLS)" if hop.tls else "") + "</div>")
+        notes = "<br>".join(_e(hop_flag_text(f)) for f in hop.flags)
+        if "unparsed" in hop.flags:
+            notes += '<div class="ev">' + _e(hop.raw) + "</div>"
+        rows.append("<tr>"
+                    '<td class="w">' + _e(hop.index) + "</td>"
+                    "<td>" + _e(hop_time_text(hop)) + "</td>"
+                    '<td class="w">' + _e(hop_delay_text(hop)) + "</td>"
+                    "<td>" + sender + "</td>"
+                    "<td>" + target + "</td>"
+                    '<td class="ex">' + notes + "</td>"
+                    "</tr>")
+    return ("<h2>Received zinciri (" + str(len(hops)) + " hop, en eski önce)</h2>"
+            "<table><thead><tr><th>#</th><th>Zaman</th><th>Δ</th><th>Kimden</th>"
+            "<th>Kime</th><th>Uyarı</th></tr></thead><tbody>" +
+            "\n".join(rows) + "</tbody></table>"
+            '<p class="note">' + _e(HOP_TRUST_NOTE) + "</p>")
+
+
+def to_html(result, source=None, iocs=None, email=None, when=None, hops=None) -> str:
     """Render one analysis as a self-contained HTML page.
 
     ``email`` is the ``ParsedEmail``, used only to show what the mail claims to
-    be (sender, subject, date) - as escaped text.
+    be (sender, subject, date) - as escaped text. ``hops`` is the parsed
+    Received chain (``received.parse``), shown only when the caller asked for it.
     """
     stamp = (when or datetime.now()).strftime("%Y-%m-%d %H:%M")
     a = result.auth
@@ -181,6 +219,8 @@ def to_html(result, source=None, iocs=None, email=None, when=None) -> str:
     else:
         parts.append('<p class="note">Gösterge yok — belirgin phishing işareti '
                      "bulunamadı.</p>")
+
+    parts.append(_received(hops))
 
     if iocs is not None:
         parts.append("<h2>IOC</h2>")

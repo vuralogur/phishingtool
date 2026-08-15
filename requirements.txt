@@ -37,13 +37,16 @@ numpy>=1.26
 # Desktop GUI (optional):
 customtkinter>=5.2
 
-# --- Benchmark harness, score breakdown, IOC export, ATT&CK tags ---
+# --- Benchmark, score breakdown, IOC export, ATT&CK tags, Received chain ---
 # Need NOTHING extra: corpus loading, metrics (precision/recall/F1), the score
 # breakdown line (hard/soft subtotals, trust multiplier, verdict reason), IOC
-# extraction (URL/domain/IP/e-mail/attachment SHA256) and the MITRE ATT&CK
+# extraction (URL/domain/IP/e-mail/attachment SHA256), the MITRE ATT&CK
 # technique tags (detector/mitre.py - a static table, no API and no network)
-# are pure stdlib (csv + dataclasses + hashlib + ipaddress + re).
+# and the Received hop table (detector/received.py, `analyze --hops`: the
+# reverse name it compares is the one already written in the header, so it
+# resolves NOTHING) are pure stdlib (csv + dataclasses + hashlib + ipaddress
+# + re + email.utils).
 
 # --- Development / tests only ---
-# pytest>=8.0            # run `python -m pytest -q` (79 tests); CI runs the same
+# pytest>=8.0            # run `python -m pytest -q` (130 tests); CI runs the same
 #                        # suite on 3.11-3.14 (Linux) and 3.12 (Windows)
