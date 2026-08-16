@@ -16,9 +16,14 @@ Two ideas keep false positives down on legitimate (often marketing) mail:
 Because neither is a plain sum, every Result carries a ``Breakdown`` (subtotals,
 the multiplier that was applied, and the verdict rule that fired) so the report
 can answer "why this score" instead of asking the reader to trust it.
+
+The constants below are the defaults, not the law: ``score(config=...)`` takes a
+``detector.config.Config`` and reads the soft set, the multipliers, the
+thresholds and per-indicator weights from it instead. Nothing is imported from
+that module here - the object is only ever read - so the two stay independent.
 """
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .indicators import SEVERITY_ORDER
 from .mitre import summary as technique_summary
@@ -47,7 +52,17 @@ SOFT_IDS = {
 }
 
 # Soft-signal weight multiplier by authentication level.
-_SOFT_MULT = {"pass": 0.3, "partial": 0.6, "fail": 1.0, "none": 1.0}
+SOFT_MULT = {"pass": 0.3, "partial": 0.6, "fail": 1.0, "none": 1.0}
+
+# Verdict cut-offs, all read against the HARD subtotal except soft_pileup (which
+# is read against the capped total) - see the ladder at the end of score().
+THRESHOLDS = {
+    "medium": 10,
+    "high": 22,
+    "critical": 45,
+    "soft_pileup": 30,   # hard > 0 and total >= this -> medium
+    "allowlist": 22,     # trusted sender staying under this -> low
+}
 
 
 @dataclass
@@ -56,6 +71,9 @@ class Breakdown:
 
     hard/soft are subtotals; ``soft`` is ``soft_raw * multiplier``. ``reason`` is
     the verdict rule that fired (a stable key; the report translates it).
+    ``config_source``/``config_changed`` say whether the numbers above came from
+    the built-in model ("" = yes) or from an override file, and which tables of
+    it differed - a score is only reproducible if you know which model made it.
     """
     hard: float
     soft_raw: float
@@ -67,6 +85,8 @@ class Breakdown:
     trusted: bool
     capped: bool
     reason: str
+    config_source: str = ""
+    config_changed: tuple = ()
 
     def to_dict(self) -> dict:
         return {
@@ -80,6 +100,10 @@ class Breakdown:
             "trusted": self.trusted,
             "capped": self.capped,
             "reason": self.reason,
+            # null = the built-in model; otherwise which file changed what.
+            "config": ({"source": self.config_source,
+                        "changed": list(self.config_changed)}
+                       if self.config_source else None),
         }
 
 
@@ -120,16 +144,28 @@ def auth_level(auth: dict) -> str:
     return "none"
 
 
-def score(indicators, auth, from_rdom="", level=None, allowlist=None) -> Result:
+def score(indicators, auth, from_rdom="", level=None, allowlist=None,
+          config=None) -> Result:
     allowlist = allowlist or set()
     level = level or auth_level(auth)
-    mult = _SOFT_MULT.get(level, 1.0)
+    # An override file, when given, replaces the whole model - not just parts of
+    # it - so a config'd run and a default run take the same code path.
+    soft_ids = config.soft_ids if config else SOFT_IDS
+    thresholds = config.thresholds if config else THRESHOLDS
+    mult = (config.soft_mult if config else SOFT_MULT).get(level, 1.0)
+
+    weights = config.weights if config else {}
+    if weights:
+        # replace(), not mutation: the indicator objects belong to the caller,
+        # and a check that is re-scored under two configs must not drift.
+        indicators = [replace(i, weight=weights[i.id]) if i.id in weights else i
+                      for i in indicators]
 
     hard_sum = 0.0
     soft_raw = 0.0
     hard_n = soft_n = 0
     for i in indicators:
-        if i.id in SOFT_IDS:
+        if i.id in soft_ids:
             soft_raw += i.weight
             soft_n += 1
         else:
@@ -144,15 +180,15 @@ def score(indicators, auth, from_rdom="", level=None, allowlist=None) -> Result:
     # tradecraft is present.
     trusted = level == "pass" and bool(from_rdom) and from_rdom in allowlist
 
-    if trusted and hard_sum < 22:
+    if trusted and hard_sum < thresholds["allowlist"]:
         verdict, reason = "low", "allowlist"
-    elif hard_sum >= 45:
+    elif hard_sum >= thresholds["critical"]:
         verdict, reason = "critical", "hard_critical"
-    elif hard_sum >= 22:
+    elif hard_sum >= thresholds["high"]:
         verdict, reason = "high", "hard_high"
-    elif hard_sum >= 10:
+    elif hard_sum >= thresholds["medium"]:
         verdict, reason = "medium", "hard_medium"
-    elif hard_sum > 0 and total >= 30:
+    elif hard_sum > 0 and total >= thresholds["soft_pileup"]:
         # a hard signal exists and soft noise piles on top
         verdict, reason = "medium", "soft_pileup"
     else:
@@ -163,6 +199,8 @@ def score(indicators, auth, from_rdom="", level=None, allowlist=None) -> Result:
         hard=hard_sum, soft_raw=soft_raw, soft=soft_sum, multiplier=mult,
         auth_level=level, hard_count=hard_n, soft_count=soft_n,
         trusted=trusted, capped=raw_total > MAX_SCORE, reason=reason,
+        config_source=getattr(config, "source", ""),
+        config_changed=tuple(getattr(config, "changed", ())),
     )
     ordered = sorted(
         indicators,

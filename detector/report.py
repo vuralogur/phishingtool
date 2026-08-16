@@ -69,8 +69,21 @@ def _num(x) -> str:
     return str(int(x)) if x == int(x) else str(x)
 
 
+_CONFIG_TR = {
+    "weights": "ağırlıklar",
+    "thresholds": "eşikler",
+    "soft_multiplier": "yumuşak çarpan",
+    "soft_ids": "yumuşak gösterge listesi",
+}
+
+
 def breakdown_lines(result) -> list:
-    """Two Turkish lines: how the score adds up, and which rule set the verdict."""
+    """Two Turkish lines: how the score adds up, and which rule set the verdict.
+
+    A third line appears only when an override file was in play - the numbers
+    above are then not the built-in model's, and a reader who cannot see that
+    cannot reproduce the score.
+    """
     b = getattr(result, "breakdown", None)
     if b is None:
         return []
@@ -83,13 +96,20 @@ def breakdown_lines(result) -> list:
     reason = _REASON_TR.get(b.reason, b.reason)
     if not b.hard_count and not b.soft_count:
         reason = "hiç gösterge yok"
-    return [
+    lines = [
         "Skor kırılımı: sert " + _num(b.hard) + " (" + str(b.hard_count) + " gösterge)"
         " + " + soft + " (" + str(b.soft_count) + " gösterge)  =  " + total,
         "Verdict nedeni: " + reason + " → " + result.verdict +
         "  ·  auth=" + b.auth_level + " (yumuşak çarpan ×" + _num(b.multiplier) + ")" +
         ("  ·  allowlist" if b.trusted else ""),
     ]
+    source = getattr(b, "config_source", "")
+    if source:
+        changed = [_CONFIG_TR.get(c, c) for c in getattr(b, "config_changed", ())]
+        lines.append("Ayar dosyası: " + source + "  ·  değişen: " +
+                     (", ".join(changed) if changed else
+                      "yok (dosya varsayılanlarla aynı)"))
+    return lines
 
 
 def technique_lines(result) -> list:

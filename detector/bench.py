@@ -244,6 +244,9 @@ def run(corpus_dir, labels=None, labels_path=None, threshold="medium",
 
     labels = labels if labels is not None else discover_labels(corpus_dir, labels_path)
     ctx = ctx if ctx is not None else analyzer.build_context()
+    # The FP/FN listing explains failures by their hard indicators, so it has to
+    # split them the same way the run being measured did.
+    soft_ids = getattr(ctx.get("config"), "soft_ids", None) or SOFT_IDS
 
     cases, missing = [], []
     for name in sorted(labels):
@@ -256,7 +259,7 @@ def run(corpus_dir, labels=None, labels_path=None, threshold="medium",
             r = analyzer.analyze_file(path, online=online, ctx=ctx)
             case.verdict = r.verdict
             case.score = r.score
-            case.hard_ids = [i.id for i in r.indicators if i.id not in SOFT_IDS]
+            case.hard_ids = [i.id for i in r.indicators if i.id not in soft_ids]
         except Exception as exc:  # a corrupt sample must not abort the whole run
             case.error = type(exc).__name__ + ": " + str(exc)
         cases.append(case)

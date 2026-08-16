@@ -23,6 +23,10 @@ ENV/
 # Local secrets / config (e.g. VT_API_KEY)
 .env
 
+# Local scoring policy: this machine's weights/thresholds are not the project's.
+# The template (config.example.toml) IS tracked.
+config.toml
+
 # Local benchmark corpus: real mail (and its labels) stays on this machine.
 corpus/**/*.eml
 corpus/**/*.msg

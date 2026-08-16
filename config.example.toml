@@ -1,0 +1,48 @@
+# phishingtool — skorlama ayar dosyası (örnek)
+#
+#   phishingtool analyze mail.eml --config config.toml
+#   PHISHINGTOOL_CONFIG=/etc/phishingtool/config.toml phishingtool batch klasor/
+#
+# Kopyalayıp `config.toml` yapın ve sadece değiştirmek istediğiniz satırları
+# bırakın: her tablo ve her anahtar opsiyoneldir, yazmadığınız her şey dahili
+# varsayılanla kalır. Dosya verilmezse hiçbir şey okunmaz — çalışma dizininde
+# `config.toml` olsa bile otomatik bulunmaz (sessizce skor değiştirmesin diye).
+#
+# Bilinmeyen bölüm/anahtar, bilinmeyen gösterge id'si, sıralaması bozuk eşik ya
+# da aralık dışı çarpan = hata (exit 2). Sessizce yok sayılmaz.
+#
+# Yüklenen ayar rapora yazılır: "Ayar dosyası: ... · değişen: eşikler".
+
+# --- Gösterge ağırlıkları -----------------------------------------------------
+# gösterge_id = puan (0..100). Geçerli id listesi: detector/mitre.py
+# (TECHNIQUES + NO_TECHNIQUE). Check modüllerindeki ağırlığın yerine geçer.
+[weights]
+# urgency_language = 3        # "acil/hemen" tonuna daha az puan
+# macro_document = 25         # makrolu belgeye kurumsal politika gereği daha çok
+# qr_code_url = 8
+
+# --- Verdict eşikleri ---------------------------------------------------------
+# Hepsi SERT alt toplama bakar (soft_pileup hariç: o kapsanmış toplama bakar).
+# medium <= high <= critical olmak zorunda.
+[thresholds]
+# medium = 10
+# high = 22
+# critical = 45
+# soft_pileup = 30            # sert > 0 ve toplam >= bu  -> medium
+# allowlist = 22              # allowlist'teki gönderen bunun altındaysa -> low
+
+# --- Yumuşak sinyal çarpanı ---------------------------------------------------
+# Kimlik doğrulama seviyesine göre yumuşak sinyallerin ölçeği (0..1).
+# Sert sinyaller hiçbir zaman ölçeklenmez.
+[soft_multiplier]
+# pass = 0.3                  # DMARC pass
+# partial = 0.6               # yalnız SPF veya yalnız DKIM pass
+# fail = 1.0
+# none = 1.0
+
+# --- Sert / yumuşak ayrımı ----------------------------------------------------
+# Varsayılan yumuşak kümeye ekle / kümeden çıkar. Kümeden çıkan gösterge SERT
+# olur: tam ağırlıkla sayılır ve verdict'i tek başına yukarı çekebilir.
+[soft_ids]
+# add = ["qr_suspicious_url"]      # bu göstergeyi bağlam gürültüsü say
+# remove = ["macro_document"]      # makrolu belgeyi sert kanıt say

@@ -71,6 +71,9 @@ python -m detector.cli bench corpus/
 
 # Ağ sorgularını aç (SPF/DMARC DNS, WHOIS, itibar API — opt-in)
 python -m detector.cli analyze mail.eml --online
+
+# Kendi ağırlık/eşiklerinle skorla (her komutta geçerli)
+python -m detector.cli analyze mail.eml --config config.toml
 ```
 
 `batch` CSV'sinin **son kolonu her zaman `error`**: bir dosya analiz edilemediyse
@@ -324,7 +327,8 @@ Verdict nedeni: sert toplam ≥ 22 → high  ·  auth=pass (yumuşak çarpan ×0
 
 `--json` çıktısında aynı veri `breakdown` nesnesidir: `hard`, `soft_raw`, `soft`,
 `multiplier`, `auth_level`, `hard_count`, `soft_count`, `trusted`, `capped`
-(puan 100'de kırpıldı mı), `reason` (verdict'i belirleyen kural anahtarı).
+(puan 100'de kırpıldı mı), `reason` (verdict'i belirleyen kural anahtarı),
+`config` (ayar dosyası kullanıldıysa yolu + değişen bölümler, yoksa `null`).
 
 **First-party bastırma:** link gönderenin kendi domainine aitse (kendi tıklama
 tracker'ı) `anchor_href_mismatch`, `open_redirect`, `random_host` ateşlenmez.
@@ -386,6 +390,46 @@ export PHISHINGTOOL_DATA=/opt/phishingtool-data   # kalıcı alternatif
 Öncelik sırası: `--data-dir` > `PHISHINGTOOL_DATA` > paket içi varsayılan.
 Eksik dosya hata değil — o sözlük boş kabul edilir.
 
+### Skorlama ayarları — `--config config.toml`
+
+Ağırlıklar, eşikler ve sert/yumuşak ayrımı da kod değiştirmeden ayarlanabilir.
+Bir bankanın SOC'u ile küçük bir işletmenin tolere ettiği yanlış-pozitif oranı
+aynı değil; bu politika fork yerine bir dosyada yaşasın diye:
+
+```bash
+cp config.example.toml config.toml
+phishingtool analyze mail.eml --config config.toml
+export PHISHINGTOOL_CONFIG=/etc/phishingtool/config.toml   # kalıcı alternatif
+```
+
+```toml
+[weights]                        # gösterge id -> puan (0..100)
+urgency_language = 3             # aciliyet tonuna daha az puan
+
+[thresholds]                     # sert alt toplam eşikleri
+high = 30                        # medium <= high <= critical şartı var
+
+[soft_multiplier]                # auth seviyesine göre yumuşak ölçek (0..1)
+pass = 0.2
+
+[soft_ids]                       # sert/yumuşak ayrımını taşı
+remove = ["macro_document"]      # makrolu belgeyi sert kanıt say
+```
+
+Üç kural:
+
+- **Opt-in** — bayrak/ortam değişkeni yoksa hiçbir şey okunmaz. Çalışma dizinindeki
+  `config.toml` **otomatik bulunmaz**; sessizce herkesin skorunu değiştirmesin diye.
+- **Sesli hata** — bilinmeyen bölüm/anahtar, bilinmeyen gösterge id'si, sırası
+  bozuk eşik veya aralık dışı çarpan **exit 2** ile durur. Sessizce yok sayılan
+  bir yazım hatası, bir ayar dosyası için en kötü sonuçtur.
+- **Görünür** — yüklenen ayar rapora yazılır (`Ayar dosyası: … · değişen: eşikler`,
+  `--json` içinde `breakdown.config`). Kimsenin yeniden üretemediği bir skor kalmaz.
+
+Geçerli gösterge id'lerinin tam listesi `detector/mitre.py` içindedir. Tüm
+seçenekler ve açıklamaları: [`config.example.toml`](config.example.toml).
+Öncelik sırası: `--config` > `PHISHINGTOOL_CONFIG` > dahili model.
+
 ## Gizlilik ve güvenlik
 
 - **Offline-first:** çekirdek analiz ağ kullanmaz. `--online` olmadan hiçbir
@@ -399,7 +443,7 @@ Eksik dosya hata değil — o sözlük boş kabul edilir.
 ## Testler
 
 ```bash
-python -m pytest -q      # 105 test
+python -m pytest -q      # 162 test
 ```
 
 Her push ve PR'da GitHub Actions bunları çalıştırır: **opsiyonel bağımlılık
@@ -411,7 +455,8 @@ kurulmadan** Python 3.11/3.12/3.13/3.14 (Linux) + 3.12 (Windows) — yeşil kalm
 
 ```
 detector/
-  cli.py          # komut satırı (analyze / batch / bench, --iocs, --hops, --verbose)
+  cli.py          # komut satırı (analyze / batch / bench, --iocs, --hops, --config)
+  config.py       # opsiyonel TOML: ağırlık/eşik/yumuşak küme override'ı
   iocs.py         # IOC çıkarımı: URL/domain/IP/e-posta/ek SHA256 (+ defang)
   received.py     # Received zinciri -> hop listesi (gecikme, ters ad, TLS) — DNS yok
   analyzer.py     # orkestratör: parse -> tüm kontroller -> skor
@@ -429,13 +474,13 @@ detector/
 gui/              # CustomTkinter masaüstü arayüz
 corpus/           # (opsiyonel, yerel) bench korpusu — gerçek mailler commit'lenmez
 tests/            # pytest + örnek .eml dosyaları
-pyproject.toml    # paket metadata + `phishingtool` konsol komutu
+config.example.toml        # skorlama ayarları şablonu (--config, opt-in)
+pyproject.toml             # paket metadata + `phishingtool` konsol komutu
 .github/workflows/ci.yml   # pytest matrisi (Linux/Windows, 3.11–3.14)
 ```
 
 ## Yol haritası (opsiyonel)
 
-- `config.toml` (tomllib) — ağırlık/eşik/`SOFT_IDS` override
 - Web UI (FastAPI): e-posta yapıştır/yükle → görsel rapor
 - Ek itibar kaynakları (PhishTank, Google Safe Browsing)
 - Redirect zinciri takibi (opt-in, sandboxed)

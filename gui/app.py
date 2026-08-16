@@ -10,7 +10,8 @@ from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
-from detector import analyzer, parser as _parser, received as _received, report
+from detector import (analyzer, config as _config, parser as _parser,
+                      received as _received, report)
 
 SEV_COLORS = {
     "low": "#2fa84f",
@@ -32,11 +33,22 @@ class App(ctk.CTk):
         self.title("Phishing Tespit")
         self.geometry("920x700")
         self.minsize(720, 560)
-        self._ctx = analyzer.build_context()
+        try:
+            self._ctx = analyzer.build_context()
+            config_error = ""
+        except _config.ConfigError as exc:
+            # A broken PHISHINGTOOL_CONFIG must not take the window down with
+            # it - but it must not quietly score with the defaults either, so
+            # the app starts and says out loud which policy it is not using.
+            config_error = str(exc)
+            self._ctx = analyzer.build_context(config=_config.DEFAULTS)
         self._last_result = None
         self._last_source = None
         self._last_hops = None
         self._build()
+        if config_error:
+            self._error("Ayar dosyası yok sayıldı (dahili model kullanılıyor):\n" +
+                        config_error)
 
     # ---------- layout ----------
     def _build(self):

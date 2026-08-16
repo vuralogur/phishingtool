@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from . import config as _config
 from . import parser as _parser
 from . import reputation
 from .checks import (
@@ -54,13 +55,22 @@ def resolve_data_dir(data_dir=None) -> Path:
     return Path(env) if env else _DATA
 
 
-def build_context(data_dir=None) -> dict:
+def build_context(data_dir=None, config=None) -> dict:
+    """Dictionaries + scoring policy, loaded once and reused for every mail.
+
+    ``config`` is a path, an already-built ``config.Config``, or None; with
+    nothing given and no PHISHINGTOOL_CONFIG set, the built-in scoring model
+    applies, so the default run is unchanged.
+    A broken file raises ``config.ConfigError`` here rather than silently
+    scoring the whole batch with defaults nobody asked for.
+    """
     d = resolve_data_dir(data_dir)
     return {
         "brands": _load_brands(d / "brands.txt"),
         "suspicious_tlds": _load_set(d / "suspicious_tlds.txt"),
         "urgency": sorted(_load_set(d / "urgency_keywords.txt")),
         "allowlist": _load_set(d / "trusted_domains.txt"),
+        "config": _config.resolve(config),
     }
 
 
@@ -87,7 +97,7 @@ def analyze(email, online=False, ctx=None):
     indicators += qr.run(email, online, ctx)
     indicators += reputation.run(email, online, ctx)
     return score(indicators, auth, from_rdom=from_rdom, level=level,
-                 allowlist=ctx.get("allowlist"))
+                 allowlist=ctx.get("allowlist"), config=ctx.get("config"))
 
 
 def analyze_file(path, online=False, ctx=None):

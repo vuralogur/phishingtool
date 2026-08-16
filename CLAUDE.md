@@ -38,6 +38,8 @@ python -m detector.cli analyze mail.eml --iocs
 python -m detector.cli analyze mail.eml --hops
 # tek dosyalık HTML rapor (gömülü CSS, JS/dış kaynak yok, mail içeriği tıklanamaz)
 python -m detector.cli analyze mail.eml --iocs --html rapor.html
+# skorlama ayarları (ağırlık/eşik/yumuşak küme) — her komutta geçerli, opt-in
+python -m detector.cli analyze mail.eml --config config.toml
 # klasör (CSV'nin son kolonu `error`; hata varsa exit 1, --verbose traceback verir)
 python -m detector.cli batch klasor/ [--iocs] [--verbose]
 # etiketli korpusa karşı ölçüm (precision/recall/F1 + hata listesi)
@@ -45,7 +47,7 @@ python -m detector.cli bench corpus/ [--threshold high] [--json]
 # GUI
 python run_gui.py
 # testler
-python -m pytest -q      # 130 test (CI: 3.11–3.14 Linux + 3.12 Windows)
+python -m pytest -q      # 162 test (CI: 3.11–3.14 Linux + 3.12 Windows)
 ```
 
 ## Mimari
@@ -63,9 +65,19 @@ python -m pytest -q      # 130 test (CI: 3.11–3.14 Linux + 3.12 Windows)
   alanlarından kurulur (`5D02`/`0042` From, `39FE`+`0C15` alıcılar, `0039` FILETIME
   tarih) ve `header_source="mapi"` döner. Ekler baytı baytına korunur; gömülü
   mesajlar (stream değil storage) atlanır. Hiçbir şey çalıştırılmaz/çözülmez.
-- `detector/analyzer.py` — orkestrasyon. `build_context()` veri dosyalarını yükler.
-  Analiz başında **güven bağlamı** hesaplar (`auth_level`, `from_rdom`) ve hem
-  check'lere (ctx içinde) hem `score()`'a geçirir.
+- `detector/analyzer.py` — orkestrasyon. `build_context(data_dir, config)` veri
+  dosyalarını + skorlama politikasını yükler (`ctx["config"]`). Analiz başında
+  **güven bağlamı** hesaplar (`auth_level`, `from_rdom`) ve hem check'lere
+  (ctx içinde) hem `score()`'a geçirir.
+- `detector/config.py` — opsiyonel TOML override'ı, saf stdlib (`tomllib`).
+  `Config` (`weights`/`thresholds`/`soft_mult`/`soft_ids`/`source`/`changed`),
+  `resolve(path)` (`--config` > `PHISHINGTOOL_CONFIG` > `DEFAULTS`), `load`,
+  `from_dict`, `ConfigError`, `KNOWN_IDS` (= `mitre.TECHNIQUES | NO_TECHNIQUE`;
+  gösterge id'lerinin tek kayıt defteri). Üç kural: **opt-in** (cwd'deki
+  `config.toml` otomatik bulunmaz), **sesli hata** (bilinmeyen bölüm/anahtar/id,
+  sırası bozuk eşik, aralık dışı çarpan = `ConfigError` → CLI exit 2), **görünür**
+  (yüklenen ayar rapora ve `breakdown.config`'e yazılır). BOM'lu dosya
+  (`utf-8-sig`) kabul edilir — Notepad/PowerShell öyle yazıyor.
 - `detector/checks/*.py` — her modül `run(email, online=False, ctx=None) -> list[Indicator]`.
 - `detector/indicators.py` — `Indicator(id, category, severity, weight, evidence,
   explanation, technique="", technique_name="")`. `__post_init__` boş `technique`'i
@@ -79,8 +91,12 @@ python -m pytest -q      # 130 test (CI: 3.11–3.14 Linux + 3.12 Windows)
   kaynağı tarar: eşlemesiz yeni `Indicator(...)` = kırmızı test.
 - `detector/scoring.py` — güven-farkındalıklı skor + verdict. `Result.breakdown`
   (`Breakdown`): sert/yumuşak alt toplam, uygulanan çarpan, sayımlar, `trusted`,
-  `capped` ve verdict'i belirleyen kural anahtarı `reason` (`hard_critical|
-  hard_high|hard_medium|soft_pileup|allowlist|weak_hard_evidence|no_hard_evidence`).
+  `capped`, verdict'i belirleyen kural anahtarı `reason` (`hard_critical|
+  hard_high|hard_medium|soft_pileup|allowlist|weak_hard_evidence|no_hard_evidence`)
+  ve `config_source`/`config_changed`. Modül sabitleri (`SOFT_IDS`, `SOFT_MULT`,
+  `THRESHOLDS`) **varsayılan**; `score(..., config=)` verilirse hepsi o nesneden
+  okunur ve `weights` `dataclasses.replace` ile uygulanır (çağıranın gösterge
+  nesneleri değiştirilmez). `config` modülünü import etmez — nesne duck-typed.
 - `detector/bench.py` — etiketli korpus → `Case`/`Metrics`/`BenchResult`;
   precision/recall/F1/FP-oranı, eşik taraması (`medium|high|critical`), FP/FN
   listesi (her biri sert gösterge id'leriyle). Etiket kaynağı: `labels.csv`
@@ -100,7 +116,8 @@ python -m pytest -q      # 130 test (CI: 3.11–3.14 Linux + 3.12 Windows)
   yazılıdır; **skoru etkilemez**, ATT&CK etiketi gibi saf metadata.
 - `detector/report.py` — rich tablo (yoksa düz metin), `to_json(result, source, iocs, hops)`,
   `iocs_lines`/`print_iocs`;
-  `breakdown_lines()` skor kırılımının iki Türkçe satırı (CLI + GUI ortak kullanır);
+  `breakdown_lines()` skor kırılımının iki Türkçe satırı (CLI + GUI ortak kullanır;
+  ayar dosyası varsa **üçüncü** satır: yol + değişen bölümler);
   `technique_lines()` ATT&CK bloğu (CLI) / `technique_summary_line()` tek satır (GUI);
   `received_lines()` hop bloğu + `_received_rich()` rich tablosu /
   `received_summary_line()` tek satır (GUI); `HOP_TRUST_NOTE` + `hop_flag_text()`
@@ -138,7 +155,7 @@ Düz toplam DEĞİL. `detector/scoring.py`:
 1. **Sert / yumuşak ayrımı** — `SOFT_IDS` yumuşak (bağlam gürültüsü: aciliyet,
    hitap, shortener, tracker-redirect, ESP alt alanları). Listede olmayan her id
    **sert** kabul edilir (yeni gösterge güvenli tarafta = sert).
-2. **Güven çarpanı** (`_SOFT_MULT`) — `auth_level`: DMARC pass → yumuşak ×0.3,
+2. **Güven çarpanı** (`SOFT_MULT`) — `auth_level`: DMARC pass → yumuşak ×0.3,
    kısmi ×0.6, fail/none ×1.0. **Sert sinyaller hiç etkilenmez.**
 3. **Kanıt desteği** — verdict **sert-toplama** dayanır: `<10 low · 10–21 medium ·
    22–44 high · 45+ critical`. Yalnız yumuşak sinyal (sert=0) → **daima low**.
@@ -155,6 +172,12 @@ Bu hesap gizli değil: her rapor (düz metin, rich, GUI, `--json`) iki satır ol
 gösterir — `Skor kırılımı: sert 34 (3 gösterge) + yumuşak 18×0.3=5.4 (4 gösterge)
 = 39/100` ve `Verdict nedeni: sert toplam ≥ 22 → high · auth=pass`.
 
+Bu beş maddenin **sayıları** `--config` ile değiştirilebilir (`[weights]`,
+`[thresholds]`, `[soft_multiplier]`, `[soft_ids]`); **mantığı** değişmez —
+sert/yumuşak ayrımı, kanıt desteği ve first-party bastırma kod tarafında kalır.
+Ayar verilmezse çıktı birebir eskisi gibidir; verilirse rapor üçüncü satırda
+hangi dosyanın hangi bölümü değiştirdiğini yazar (bkz. `detector/config.py`).
+
 `brand_impersonation` **kimlik-temelli**: marka adı yalnızca **From display-name
 veya From adresinde** geçip domain markanın resmi domaini değilse ateşler
 (kelime-sınırlı). Gövdede marka *anmak* tetiklemez — meşru mail sürekli marka anar.
@@ -169,6 +192,10 @@ Sözlükler **paket içinde** (wheel'e girer, `phishingtool` her dizinden bulur)
 - `suspicious_tlds.txt`, `urgency_keywords.txt` (TR+EN)
 - `trusted_domains.txt` — güvenilen gönderen allowlist'i
 
+**Skorlama ayarı ayrı** (`--config config.toml`, `PHISHINGTOOL_CONFIG`): sözlük
+değil politika. Şablon repo kökünde `config.example.toml`; şema ve kurallar
+`detector/config.py` docstring'inde. Gerçek `config.toml` git'te takip edilmez.
+
 `corpus/` — `bench` korpusu (yerel). Gerçek mailler git'te **yok**: `.gitignore`
 `corpus/**/*.eml`, `corpus/**/*.msg`, `corpus/labels.csv` hariç tutar; sadece
 `corpus/README.md` + `labels.example.csv` takip edilir.
@@ -182,8 +209,8 @@ Sözlükler **paket içinde** (wheel'e girer, `phishingtool` her dizinden bulur)
   var, bir sonraki değişiklik F1 ile doğrulanabilir.
 - **Tier 4** — **pyproject + `phishingtool` konsol komutu + GitHub Actions CI DONE**
   (`pyproject.toml`, `.github/workflows/ci.yml`; sözlükler pakete taşındı,
-  `--data-dir`/`PHISHINGTOOL_DATA` override'ı eklendi). Threat intel API,
-  YAML/TOML config, GUI önizleme, PDF rapor hâlâ PENDING.
+  `--data-dir`/`PHISHINGTOOL_DATA` override'ı eklendi; **TOML config DONE**,
+  aşağıya bak). Threat intel API, GUI önizleme, PDF rapor hâlâ PENDING.
 - **MITRE ATT&CK etiketi** (`detector/mitre.py`) — **DONE**; `batch` hata
   raporlaması (`error` kolonu + `--verbose` + exit 1) — **DONE**.
 - **`.msg` (Outlook) desteği** — **DONE** (`detector/msg.py`, bağımlılıksız).
@@ -196,7 +223,13 @@ Sözlükler **paket içinde** (wheel'e girer, `phishingtool` her dizinden bulur)
 - **Received hop tablosu** (`--hops`) — **DONE** (`detector/received.py`; CLI
   düz metin + rich, `--json` `received` anahtarı, HTML bölümü, GUI özet satırı).
   Opt-in bayrak: verilmezse çıktı eskisiyle birebir aynı. Skorlama dokunulmadı.
-  Sırada: `config.toml` ile ağırlık/eşik override.
+- **`config.toml` (ağırlık/eşik override)** — **DONE** (`detector/config.py`,
+  `tomllib`, bağımlılıksız). Her komutta `--config DOSYA` +
+  `PHISHINGTOOL_CONFIG`; `[weights]`/`[thresholds]`/`[soft_multiplier]`/
+  `[soft_ids]`. Opt-in (cwd otomatik taranmaz), sesli hata (exit 2), rapor +
+  `breakdown.config` içinde görünür. Şablon: `config.example.toml`.
+  **Roadmap'in 9 maddesi bitti** — kalan iş: ML sınıflandırıcı (Tier 3),
+  threat intel API, GUI önizleme, PDF rapor, `batch --html`.
 
 Örnek: `python -m detector.cli analyze tests/samples/phish_tier2.eml` → critical 100.
 

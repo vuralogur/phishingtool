@@ -5,6 +5,10 @@
   phishingtool batch   <dir>              [--online] [--json] [--iocs] [--verbose]
   phishingtool bench   <corpus dir>       [--threshold high] [--json]
 
+Every subcommand also takes --data-dir (dictionaries) and --config (scoring
+weights/thresholds); both default to the built-ins, so a bare run is offline and
+unconfigured.
+
 Installed as the `phishingtool` console script; `python -m detector.cli ...`
 works identically from a source checkout.
 """
@@ -16,8 +20,9 @@ import sys
 import traceback
 from pathlib import Path
 
-from . import (analyzer, bench as _bench, html_report as _html, iocs as _iocs,
-               parser as _parser, received as _received, report)
+from . import (analyzer, bench as _bench, config as _config,
+               html_report as _html, iocs as _iocs, parser as _parser,
+               received as _received, report)
 
 # Windows legacy consoles default to a regional codepage (e.g. cp1254) that
 # cannot encode emoji / some characters. Force UTF-8 so output never crashes.
@@ -29,7 +34,7 @@ for _stream in (sys.stdout, sys.stderr):
 
 
 def cmd_analyze(args) -> int:
-    ctx = analyzer.build_context(args.data_dir)
+    ctx = analyzer.build_context(args.data_dir, args.config)
     src = args.input
     # Parse first: --iocs needs the ParsedEmail, not just the score.
     if src == "-":
@@ -70,7 +75,7 @@ def cmd_analyze(args) -> int:
 
 
 def cmd_batch(args) -> int:
-    ctx = analyzer.build_context(args.data_dir)
+    ctx = analyzer.build_context(args.data_dir, args.config)
     d = Path(args.dir)
     if not d.is_dir():
         print("HATA: klasor yok: " + args.dir, file=sys.stderr)
@@ -141,7 +146,7 @@ def cmd_bench(args) -> int:
     try:
         result = _bench.run(args.dir, labels_path=args.labels,
                             threshold=args.threshold, online=args.online,
-                            ctx=analyzer.build_context(args.data_dir))
+                            ctx=analyzer.build_context(args.data_dir, args.config))
     except _bench.BenchError as exc:
         print("HATA: " + str(exc), file=sys.stderr)
         return 2
@@ -164,6 +169,10 @@ def build_parser() -> argparse.ArgumentParser:
     common.add_argument("--data-dir",
                         help="Sozluk klasoru (varsayilan: paket ici detector/data; "
                              "PHISHINGTOOL_DATA ortam degiskeni de gecerli)")
+    common.add_argument("--config", metavar="DOSYA",
+                        help="Skorlama ayar dosyasi (TOML): agirlik/esik/yumusak "
+                             "carpan override'i. Verilmezse dahili model kullanilir; "
+                             "PHISHINGTOOL_CONFIG ortam degiskeni de gecerli")
 
     a = sub.add_parser("analyze", parents=[common],
                        help="Tek bir .eml/.msg dosyasini veya stdin'i analiz et")
@@ -212,7 +221,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except _config.ConfigError as exc:
+        # A tuning file that cannot be honoured must not silently fall back to
+        # the built-in model - the run would score fine and mean nothing.
+        print("HATA: " + str(exc), file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
