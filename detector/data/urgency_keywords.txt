@@ -1,21 +1,207 @@
-# One lowercase keyword/phrase per line (TR + EN). Matched as substring.
+# Aciliyet / baski dili sozlugu — satir basina bir kucuk harfli ifade.
+#
+# Eslesme: ifade, mailin konu + metin + HTML govdesinin ASCII'ye katlanmis
+# halinde ALT DIZI olarak aranir (detector/checks/content.py, util.ascii_fold).
+# Yani "acilen" ifadesi "ACILEN", "Acilen" ve "ACİLEN" ile de eslesir; siz de
+# buraya Turkce harfle yazabilirsiniz, katlama iki tarafi da normalize eder.
+#
+# Kural: alt dizi arandigi icin ifade AYIRT EDICI olmali. "acil" yazarsaniz
+# "acilis", "acilan" gibi masum kelimeler de eslesir; "acilen" veya "acil islem"
+# yazin. Tek basina "onay", "guncelle", "fatura" gibi is dunyasinin her gun
+# kullandigi kelimeleri EKLEMEYIN — bu gosterge yumusak (soft), tek basina
+# verdict'i yukseltmez, ama gereksiz gurultu raporu okunmaz yapar.
+
+# --- hesap tehdidi (TR) ---
 askıya alındı
-hesabınız kapat
-doğrulayın
-acilen
-son 24 saat
-hemen harekete
-şifrenizi güncelle
-güvenlik uyarısı
-yetkisiz giriş
+askıya alınacak
 hesabınız askıya
+hesabınız kapatılacak
+hesabınız kısıtlandı
+hesabınız dondurul
+hesabınıza erişim engellendi
+erişiminiz kısıtlandı
+hesap doğrulaması gerekli
+kimlik doğrulaması gerekli
+doğrulanmadığı takdirde
+işlem yapılmazsa
+bilgilerinizi güncellemezseniz
+hesabınız silinecek
+üyeliğiniz sona eriyor
+aboneliğiniz sona eriyor
+oturumunuz sonlandırıldı
+
+# --- zaman baskisi (TR) ---
+acilen
+acil işlem
+acil eylem
+derhal
+gecikmeden
+son 24 saat
+son 48 saat
+24 saat içinde
+48 saat içinde
+72 saat içinde
+son uyarı
+son ihtar
+son bildirim
+bugün sona eriyor
+süre doluyor
+süresi dolmak üzere
+hemen harekete
+hemen tıklayın
+hemen doğrulayın
+hemen güncelleyin
+hemen ödeyin
+vakit kaybetmeden
+
+# --- kimlik / sifre (TR) ---
+şifrenizi güncelle
+şifrenizin süresi
+şifreniz sona eriyor
+parolanızı sıfırla
+parolanızı güncelle
+güvenlik uyarısı
+güvenlik ihlali
+güvenlik doğrulaması
+yetkisiz giriş
+şüpheli giriş
+şüpheli hareket
+olağandışı etkinlik
+farklı cihazdan giriş
+bilinmeyen cihazdan
+tanımlanmayan cihaz
+hesabınızda şüpheli
+
+# --- para / odeme (TR) ---
+ödemeniz alınamadı
+ödeme başarısız
+ödemeniz reddedildi
+faturanız ödenmedi
+borcunuz bulunmakta
+son ödeme tarihi geçti
+kartınız bloke
+kartınız kapatıldı
+kart bilgilerinizi güncelleyin
+para iadesi
+iade talebiniz
+vergi iadesi
+vergi borcunuz
+icra takibi başlatıl
+haciz işlemi
+
+# --- kargo / teslimat (TR) ---
+kargonuz teslim edilemedi
+teslimat başarısız
+gümrükte bekliyor
+gümrük ücreti
+teslimat ücreti
+adres bilgilerinizi güncelleyin
+kargo takip numaranız
+paketiniz bekliyor
+
+# --- odul / merak (TR) ---
+ödül kazandınız
+çekilişi kazandınız
+hediye çeki kazandınız
+kampanyayı kaçırmayın
+size özel tanımlandı
+tebrikler kazandınız
+
+# --- dosya / kurumsal tuzak (TR) ---
+sizinle bir belge paylaştı
+paylaşılan dosyayı görüntüle
+belgeyi görüntülemek için
+dosyayı indirmek için tıklayın
+yönetici onayı bekliyor
+posta kutunuz dolu
+e-posta kotanız doldu
+e-postalarınız engellendi
+maaş bordronuz
+
+# --- account threat (EN) ---
 account suspended
+account has been suspended
+account will be closed
+account will be deactivated
+account has been limited
+account is on hold
 verify your account
+verify your identity
+verify your email
+confirm your identity
+confirm your account
+validate your account
+reactivate your account
+unusual activity
+suspicious activity
+unusual sign-in
+unusual login attempt
+unauthorized login
+unauthorized access
+sign-in attempt was blocked
+we detected a login
+
+# --- time pressure (EN) ---
 urgent
 immediately
-within 24 hours
-unusual activity
-password expired
-confirm your identity
-click here
+immediate action
 action required
+requires your action
+within 24 hours
+within 48 hours
+final notice
+final reminder
+last warning
+expires today
+expires in 24
+time sensitive
+do not ignore
+failure to comply
+to avoid suspension
+to avoid account closure
+act now
+respond now
+
+# --- credentials (EN) ---
+password expired
+password will expire
+password has expired
+update your password
+reset your password
+security alert
+security notice
+security breach
+verify now
+confirm now
+click here
+
+# --- money / delivery / bait (EN) ---
+payment failed
+payment declined
+payment could not be processed
+outstanding invoice
+overdue payment
+update your billing
+billing information is invalid
+tax refund
+claim your refund
+delivery failed
+undelivered package
+package is waiting
+shipping fee
+customs clearance
+track your shipment
+you have won
+you are the winner
+claim your prize
+gift card
+mailbox is full
+storage is full
+quota exceeded
+session expired
+sign in to continue
+document shared with you
+review and sign
+subscription expired
+renew your subscription
+membership will expire

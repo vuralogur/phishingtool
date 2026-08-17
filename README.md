@@ -340,7 +340,16 @@ tracker'ı) `anchor_href_mismatch`, `open_redirect`, `random_host` ateşlenmez.
 
 **Başlık / kimlik doğrulama** — `spf_fail`/`spf_softfail`, `dkim_fail`, `dmarc_fail`,
 `from_replyto_mismatch`, `from_returnpath_mismatch`, `display_name_spoof`,
-(online) `no_spf_record`.
+`auth_claim_unverifiable`, `auth_results_conflict`, (online) `no_spf_record`.
+
+**Güven sınırı:** SPF/DKIM/DMARC sonucu **yalnızca en üstteki**
+`Authentication-Results` başlığından okunur — başlıklar yukarı eklendiği için
+alttakiler mail size ulaşmadan önce yazılmıştır, gönderenin kendi eklediği satır
+da dahil. Alt satır daha iyi bir sonuç iddia ederse `auth_results_conflict` ile
+raporlanır ama skora girmez (yönlendirilmiş mailde normaldir). Hiç `Received`
+başlığı yokken gelen "pass" iddiası ise `auth_claim_unverifiable` üretir ve
+**yumuşak sinyal indirimi verilmez**: o satırı damgalayan bir sunucu yok.
+`Received-SPF` kendi dilbilgisiyle (`Pass (...)`) okunur.
 
 **URL / bağlantı** — `anchor_href_mismatch`, `ip_url`, `punycode_domain`,
 `homograph_domain`, `at_in_url`, `url_shortener`, `suspicious_tld`,
@@ -377,6 +386,14 @@ Sözlükler `detector/data/` altında düz metin — kod değiştirmeden genişl
 - `detector/data/suspicious_tlds.txt` — satır başına bir TLD
 - `detector/data/urgency_keywords.txt` — satır başına bir kelime/ifade (TR + EN)
 - `detector/data/trusted_domains.txt` — güvenilen gönderen allowlist'i
+
+Karşılaştırmalar **ASCII'ye katlanır** (`util.ascii_fold`): `str.lower()` "I"
+harfini "ı"ya çeviremediği için "VAKIFBANK" yazan bir mail "vakıfbank" satırıyla
+asla eşleşmezdi. Artık sözlüğü hangi yazımla yazarsanız yazın iki yönde de
+eşleşir; büyük harfli Türkçe konu satırları da anahtar kelimeleri yakalar.
+Konuşulan ad ile domain etiketi farklıysa iki satır yazın (`yurtiçi kargo` ve
+`yurticikargo`). Anahtar kelimeler **alt dizi** olarak arandığı için ayırt edici
+olmalı: `acil` değil `acilen`.
 
 Sözlükler **paketin içinde** taşınır; böylece `phishingtool` komutu hangi
 dizinden çalıştırılırsa çalıştırılsın onları bulur. Kurulu dosyalara dokunmadan
@@ -443,7 +460,7 @@ seçenekler ve açıklamaları: [`config.example.toml`](config.example.toml).
 ## Testler
 
 ```bash
-python -m pytest -q      # 162 test
+python -m pytest -q      # 177 test
 ```
 
 Her push ve PR'da GitHub Actions bunları çalıştırır: **opsiyonel bağımlılık

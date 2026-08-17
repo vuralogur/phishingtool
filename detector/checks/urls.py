@@ -4,14 +4,20 @@ import re
 from urllib.parse import urlparse
 
 from ..indicators import Indicator
-from ..util import registered_domain, is_ip, has_non_ascii, levenshtein
+from ..util import (has_non_ascii, is_ip, looks_like_domain,
+                    lookalike_distance, registered_domain)
 
 SHORTENERS = {
     "bit.ly", "tinyurl.com", "goo.gl", "t.co", "ow.ly", "is.gd", "buff.ly",
     "rebrand.ly", "cutt.ly", "t.ly", "shorturl.at", "rb.gy", "tiny.cc",
+    "s.id", "shrtco.de", "clck.ru", "surl.li", "trib.al", "lnkd.in",
+    "bl.ink", "short.io", "shorturl.com", "urlz.fr", "u.to", "qrco.de",
+    "linktr.ee", "cutt.us", "gg.gg", "v.gd", "0rz.tw", "shorte.st",
 }
 
-_DOMAIN_TOKEN = re.compile(r"[\w-]+\.\w{2,}")
+# Whole dotted name, not the first two labels: "www.paypal.com" must not be read
+# as "www.paypal", which has no public suffix and would be discarded below.
+_DOMAIN_TOKEN = re.compile(r"(?:[\w-]+\.)+[a-z]{2,}")
 
 
 def _host(href):
@@ -46,8 +52,11 @@ def run(email, online=False, ctx=None):
         rdom = registered_domain(host)
 
         # Anchor text implies one domain, href points somewhere else.
+        # looks_like_domain: anchor text such as "Ltd.Sti" or "dosya.pdf" matches
+        # the domain regex without being a domain - comparing it to the href
+        # produced a hard 20-point mismatch on ordinary mail.
         m = _DOMAIN_TOKEN.search((link.text or "").lower())
-        if m:
+        if m and looks_like_domain(m.group(0)):
             text_dom = registered_domain(m.group(0))
             if text_dom and rdom and text_dom != rdom:
                 from_rdom = ctx.get("from_rdom", "")
@@ -96,8 +105,8 @@ def run(email, online=False, ctx=None):
         # Look-alike of a known brand (edit distance 1-2, not the real domain).
         for brand, domains in brands.items():
             for legit in domains:
-                d = levenshtein(rdom, legit)
-                if 0 < d <= 2 and rdom not in domains:
+                d = lookalike_distance(rdom, legit)
+                if d and rdom not in domains:
                     add(Indicator("lookalike_domain", "url", "high", 16,
                         host + " ~ " + legit + " (fark " + str(d) + ")",
                         "'" + legit + "' markasina cok benzeyen sahte domain."))

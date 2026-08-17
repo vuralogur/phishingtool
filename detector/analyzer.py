@@ -82,6 +82,11 @@ def analyze(email, online=False, ctx=None):
     # noise; scoring uses them to discount soft signals from proven senders.
     auth = headers.summary(email)
     level = auth_level(auth)
+    if headers.unverifiable_auth(email):
+        # A "pass" that no server stamped is the sender's own claim. The report
+        # still shows what the header says (and headers.py raises an indicator
+        # about it), but the score must not hand out the trust discount for it.
+        level = "none"
     from_rdom = registered_domain(email.from_domain)
     ctx = {**ctx, "from_rdom": from_rdom, "auth_level": level}
 

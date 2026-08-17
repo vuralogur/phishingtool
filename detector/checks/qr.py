@@ -13,7 +13,7 @@ import base64
 import re
 
 from ..indicators import Indicator
-from ..util import registered_domain, is_ip, levenshtein
+from ..util import registered_domain, is_ip, lookalike_distance
 from .urls import SHORTENERS
 
 _IMG_EXT = {"png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "tif"}
@@ -79,8 +79,8 @@ def _image_blobs(email):
             continue
 
 
-def _judge_url(url: str, brands: dict, sus_tlds: set):
-    """Return (severity, weight, id, note) for a decoded URL, or None if benign-looking."""
+def _judge_url(url: str, brands: dict, sus_tlds: set) -> list:
+    """Reasons the decoded URL looks hostile; an empty list means nothing stood out."""
     m = re.match(r"[a-z]+://([^/\s]+)", url, re.IGNORECASE)
     host = (m.group(1).split("@")[-1].split(":")[0] if m else "").lower()
     rdom = registered_domain(host)
@@ -96,7 +96,7 @@ def _judge_url(url: str, brands: dict, sus_tlds: set):
         reasons.append("punycode/IDN")
     for _brand, domains in brands.items():
         for legit in domains:
-            if 0 < levenshtein(rdom, legit) <= 2 and rdom not in domains:
+            if lookalike_distance(rdom, legit) and rdom not in domains:
                 reasons.append("marka taklidi ~" + legit)
                 break
     return reasons

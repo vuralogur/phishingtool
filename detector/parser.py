@@ -1,6 +1,6 @@
 """Parse a .eml / .msg file or raw email text into a normalized ParsedEmail."""
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from email import policy
 from email.parser import BytesParser, Parser
 from email.utils import parseaddr
@@ -62,6 +62,10 @@ class ParsedEmail:
     # latter case SPF/DKIM/DMARC and Received are absent from the file itself.
     source_format: str = "eml"
     header_source: str = "rfc822"
+    # Received-SPF is a different header with a different grammar ("Pass (...)",
+    # not "spf=pass"), so it is kept apart from auth_results instead of being
+    # appended to it - mixed together, neither could be read correctly.
+    spf_received: list = field(default_factory=list)
 
 
 class _AnchorExtractor(HTMLParser):
@@ -184,7 +188,7 @@ def _build(msg, raw: str, raw_bytes: bytes,
     _, return_path = _first_addr(msg.get("Return-Path", ""))
     received = [str(r) for r in (msg.get_all("Received", []) or [])]
     auth = [str(x) for x in (msg.get_all("Authentication-Results", []) or [])]
-    auth += [str(x) for x in (msg.get_all("Received-SPF", []) or [])]
+    spf_received = [str(x) for x in (msg.get_all("Received-SPF", []) or [])]
     text_body, html_body = _bodies(msg)
     return ParsedEmail(
         raw=raw,
@@ -200,6 +204,7 @@ def _build(msg, raw: str, raw_bytes: bytes,
         date=str(msg.get("Date", "") or ""),
         received=received,
         auth_results=auth,
+        spf_received=spf_received,
         text_body=text_body,
         html_body=html_body,
         links=_extract_links(html_body, text_body),

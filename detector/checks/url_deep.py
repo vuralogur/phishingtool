@@ -19,7 +19,7 @@ import re
 from urllib.parse import urlparse, parse_qs
 
 from ..indicators import Indicator
-from ..util import registered_domain, is_ip
+from ..util import ascii_fold, registered_domain, is_ip
 
 _REDIRECT_PARAMS = {"url", "redirect", "redir", "next", "return", "returnurl",
                     "dest", "destination", "continue", "goto", "target", "u", "r"}
@@ -116,11 +116,14 @@ def run(email, online=False, ctx=None):
         for brand, domains in brands.items():
             if rdom in domains:
                 continue  # the real thing
-            if _combosquat(sld, brand):
+            # Host labels are ASCII; a dictionary entry spelled "vakıfbank" can
+            # only ever match one after folding (see util.ascii_fold).
+            token = ascii_fold(brand)
+            if _combosquat(sld, token):
                 add(Indicator("combosquat_domain", "url", "high", 16,
                     "'" + brand + "' + ek kelime domainde: " + rdom,
                     "Marka adini fazladan kelimeyle birlestiren sahte domain (combosquatting)."))
-            if sub and re.search(r"(^|[^a-z0-9])" + re.escape(brand) + r"([^a-z0-9]|$)", sub):
+            if sub and re.search(r"(^|[^a-z0-9])" + re.escape(token) + r"([^a-z0-9]|$)", sub):
                 add(Indicator("brand_in_subdomain", "url", "high", 16,
                     "'" + brand + "' subdomain'e gomulu, gercek domain: " + rdom,
                     "Marka adi subdomain'e konup alakasiz bir domain mesru gosteriliyor."))
@@ -137,7 +140,11 @@ def run(email, online=False, ctx=None):
                     break
 
         # --- DGA / random-looking host label ---
-        if not first_party and len(sld) >= 12 and _entropy(sld) >= 3.6 and sum(c.isdigit() for c in sld) <= len(sld):
+        # The digit cap keeps numeric infrastructure labels (cdn-000123456789,
+        # customer ids) out: those are high-entropy and vowel-poor by nature but
+        # are not generated domains.
+        mostly_digits = sum(c.isdigit() for c in sld) > len(sld) // 2
+        if not first_party and not mostly_digits and len(sld) >= 12 and _entropy(sld) >= 3.6:
             vowels = sum(c in "aeiou" for c in sld)
             if vowels / len(sld) < 0.3:
                 add(Indicator("random_host", "url", "low", 6,

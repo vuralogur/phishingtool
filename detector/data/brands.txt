@@ -1,18 +1,123 @@
-# format: brand,domain1;domain2;...
-# "brand" is matched as a lowercase substring of the email text.
+# Marka sozlugu — format: marka,domain1;domain2;...
+#
+# "marka" kimlik-temelli eslesir: yalnizca From gorunen adi veya From adresinde
+# KELIME SINIRIYLA gecerse ateslenir (govdede markayi ANMAK tetiklemez, mesru
+# mail surekli marka anar). Karsilastirma ASCII'ye katlanir (util.ascii_fold),
+# yani "vakıfbank" satiri "VAKIFBANK" ve "vakifbank" yazan maili de yakalar.
+# Ayni marka domain listesiyle URL kontrollerinde de kullanilir: benzer domain
+# (lookalike), marka+ek kelime (combosquat), subdomain'e gomulu marka, IDN
+# homoglyph. Domainler markanin GERCEK domainleridir — listedekiler asla
+# supheli sayilmaz.
+#
+# Iki kural:
+#  * Konusulan ad ile domain etiketi farkliysa IKI satir yazin
+#    (ornek: "yurtiçi kargo" gorunen adda gecer, "yurticikargo" domainde gecer).
+#  * Cok kisa/genel kelimeleri marka adi yapmayin ("bim", "ing", "visa"):
+#    gunluk metinde gecerler ve yanlis pozitif uretirler.
+
+# --- teknoloji / bulut ---
 paypal,paypal.com
-microsoft,microsoft.com;live.com;outlook.com;office.com
+microsoft,microsoft.com;live.com;outlook.com;office.com;microsoftonline.com;sharepoint.com;onedrive.com;azure.com
+office 365,office.com;microsoft.com;microsoftonline.com
+onedrive,onedrive.com;microsoft.com
+sharepoint,sharepoint.com;microsoft.com
 apple,apple.com;icloud.com
-google,google.com;gmail.com
-amazon,amazon.com;amazon.com.tr
+icloud,icloud.com;apple.com
+google,google.com;gmail.com;youtube.com
+gmail,gmail.com;google.com
+amazon,amazon.com;amazon.com.tr;amazon.de
 netflix,netflix.com
+disney,disney.com;disneyplus.com
+spotify,spotify.com
+steam,steampowered.com;steamcommunity.com
+epic games,epicgames.com
 instagram,instagram.com
 facebook,facebook.com;fb.com
 whatsapp,whatsapp.com
+telegram,telegram.org
+tiktok,tiktok.com
+twitter,twitter.com;x.com
 linkedin,linkedin.com
-dhl,dhl.com
+dropbox,dropbox.com
+docusign,docusign.com;docusign.net
+adobe,adobe.com
+wetransfer,wetransfer.com
+zoom,zoom.us
+slack,slack.com
+github,github.com
+oracle,oracle.com
+booking,booking.com
+airbnb,airbnb.com
+ebay,ebay.com
+aliexpress,aliexpress.com
+alibaba,alibaba.com
+western union,westernunion.com
+mastercard,mastercard.com
+
+# --- kripto ---
+binance,binance.com
+coinbase,coinbase.com
+paribu,paribu.com
+btcturk,btcturk.com
+
+# --- kargo / lojistik ---
+dhl,dhl.com;dhl.de
+fedex,fedex.com
+ups,ups.com
+tnt,tnt.com
+usps,usps.com
+ptt,ptt.gov.tr;pttkargo.com
+yurtiçi kargo,yurticikargo.com
+yurticikargo,yurticikargo.com
+aras kargo,araskargo.com.tr
+araskargo,araskargo.com.tr
+mng kargo,mngkargo.com.tr
+mngkargo,mngkargo.com.tr
+sürat kargo,suratkargo.com.tr
+suratkargo,suratkargo.com.tr
+
+# --- Turkiye: bankalar / odeme ---
 garanti,garantibbva.com.tr
+garanti bbva,garantibbva.com.tr
+garantibbva,garantibbva.com.tr
 akbank,akbank.com
 ziraat,ziraatbank.com.tr
+ziraat bankası,ziraatbank.com.tr
+ziraatbank,ziraatbank.com.tr
 vakıfbank,vakifbank.com.tr
+iş bankası,isbank.com.tr;isbank.com
+isbank,isbank.com.tr;isbank.com
+yapı kredi,yapikredi.com.tr
+yapikredi,yapikredi.com.tr
+halkbank,halkbank.com.tr
+denizbank,denizbank.com
+qnb,qnbfinansbank.com;qnb.com.tr
+finansbank,qnbfinansbank.com
+teb,teb.com.tr
+hsbc,hsbc.com.tr;hsbc.com
+kuveyt türk,kuveytturk.com.tr
+kuveytturk,kuveytturk.com.tr
+albaraka,albaraka.com.tr
+şekerbank,sekerbank.com.tr
+odeabank,odeabank.com.tr
+enpara,enpara.com
+papara,papara.com
+ininal,ininal.com
+iyzico,iyzico.com
+
+# --- Turkiye: kamu / operator / e-ticaret ---
+e-devlet,turkiye.gov.tr
+edevlet,turkiye.gov.tr
+sgk,sgk.gov.tr
 turkcell,turkcell.com.tr
+vodafone,vodafone.com.tr;vodafone.com
+türk telekom,turktelekom.com.tr
+turktelekom,turktelekom.com.tr
+ttnet,turktelekom.com.tr
+trendyol,trendyol.com
+hepsiburada,hepsiburada.com
+n11,n11.com
+sahibinden,sahibinden.com
+getir,getir.com
+migros,migros.com.tr
+a101,a101.com.tr

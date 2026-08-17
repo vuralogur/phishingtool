@@ -128,6 +128,12 @@ NO_TECHNIQUE = frozenset({
     "private_origin_ip",
     # A gap in what Outlook stored in the .msg - a fact about the file format.
     "msg_no_transport_headers",
+    # Two Authentication-Results headers disagreeing is exactly what a forward
+    # produces, so it describes the mail's path, not the adversary's tradecraft.
+    "auth_results_conflict",
+    # "The header says pass and nothing backs it up" is a statement about what
+    # this file can prove, not about a technique the adversary used.
+    "auth_claim_unverifiable",
 })
 
 

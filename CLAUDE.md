@@ -47,7 +47,7 @@ python -m detector.cli bench corpus/ [--threshold high] [--json]
 # GUI
 python run_gui.py
 # testler
-python -m pytest -q      # 162 test (CI: 3.11–3.14 Linux + 3.12 Windows)
+python -m pytest -q      # 177 test (CI: 3.11–3.14 Linux + 3.12 Windows)
 ```
 
 ## Mimari
@@ -137,7 +137,7 @@ python -m pytest -q      # 162 test (CI: 3.11–3.14 Linux + 3.12 Windows)
 
 | Modül | Ne bakar | Not |
 |-------|----------|-----|
-| `checks/headers.py` | SPF/DKIM/DMARC özeti, from↔reply/return-path uyuşmazlığı, `display_name_spoof`, `msg_no_transport_headers` | online: `no_spf_record` |
+| `checks/headers.py` | SPF/DKIM/DMARC özeti (**güven sınırı**, aşağıda), from↔reply/return-path uyuşmazlığı, `display_name_spoof`, `msg_no_transport_headers`, `auth_results_conflict`, `auth_claim_unverifiable` | online: `no_spf_record` |
 | `checks/auth_verify.py` | **Tier 1** kripto: DKIM imza doğrulama, canlı SPF, DMARC politikası, Received/IP adli | online-gated (Received adli offline) |
 | `checks/urls.py` | `anchor_href_mismatch` (first-party farkında), `ip_url`, punycode/homograph, shortener, suspicious_tld, `lookalike_domain` | |
 | `checks/url_deep.py` | **Tier 2**: `open_redirect`, `combosquat_domain`, `brand_in_subdomain`, `confusable_brand` (IDN), `random_host` (DGA) | first-party farkında |
@@ -177,6 +177,20 @@ Bu beş maddenin **sayıları** `--config` ile değiştirilebilir (`[weights]`,
 sert/yumuşak ayrımı, kanıt desteği ve first-party bastırma kod tarafında kalır.
 Ayar verilmezse çıktı birebir eskisi gibidir; verilirse rapor üçüncü satırda
 hangi dosyanın hangi bölümü değiştirdiğini yazar (bkz. `detector/config.py`).
+
+**Güven sınırı (auth)**: `headers.summary()` SPF/DKIM/DMARC'ı **yalnızca en
+üstteki** `Authentication-Results`'tan okur; başlıklar yukarı eklendiği için
+alttakiler gönderenin kendi yazdığı satır olabilir. Üst satırın söylemediği
+mekanizma `none` kalır — alttan doldurulmaz. `Received-SPF` ayrı alandan
+(`ParsedEmail.spf_received`) kendi dilbilgisiyle okunur. Alt satır daha iyi
+sonuç iddia ederse `auth_results_conflict` (yumuşak, ATT&CK'siz) raporlanır.
+Hiç `Received` yokken "pass" iddiası = `auth_claim_unverifiable` **ve**
+`analyzer.analyze()` `auth_level`'ı `none`'a düşürür (indirim yok).
+`util.ascii_fold()` marka/anahtar kelime karşılaştırmalarını ASCII'ye katlar
+(`str.lower()` "I"→"ı" yapamaz; "VAKIFBANK" aksi hâlde hiç eşleşmiyordu).
+`util.looks_like_domain()` "Ltd.Sti" gibi domain olmayan token'ları eler,
+`util.lookalike_distance()` düzenleme mesafesi toleransını marka adının
+uzunluğuna göre ölçekler (`fb.com`'a 2 mesafe = internetin yarısı).
 
 `brand_impersonation` **kimlik-temelli**: marka adı yalnızca **From display-name
 veya From adresinde** geçip domain markanın resmi domaini değilse ateşler

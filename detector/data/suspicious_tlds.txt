@@ -1,17 +1,83 @@
-# One TLD per line (no dot). Free / commonly abused TLDs.
+# Supheli / kotuye kullanim orani yuksek TLD'ler — satir basina bir TLD, noktasiz.
+#
+# Bu gosterge YUMUSAK (soft, agirlik 8): tek basina verdict yukseltmez, sadece
+# sert bir kanit varken tabloyu netlestirir. Bu yuzden liste genis tutulabilir.
+# Yine de ".com/.net/.org/.io/.dev/.app" gibi ana akim uzantilar BILEREK yok —
+# onlari eklemek her mesru maili boyar ve gostergeyi anlamsizlastirir.
+#
+# Kaynak mantigi: ucretsiz/cok ucuz kayit, zayif kotuye kullanim denetimi ve
+# spam/phishing raporlarinda surekli ust siralarda cikan uzantilar.
+
+# --- dosya adina benzeyenler (tiklama tuzagi) ---
 zip
 mov
-xyz
-top
+
+# --- ucretsiz kayit (Freenom mirasi) ---
 tk
 ml
 ga
 cf
 gq
-work
+
+# --- ucuz toplu kayit, klasik spam ---
+xyz
+top
+buzz
+cyou
+icu
+sbs
+cfd
+bond
+quest
+monster
 click
 link
-country
+work
+rest
 kim
 loan
-rest
+country
+uno
+casa
+lat
+mom
+bar
+best
+cam
+cheap
+download
+fit
+gdn
+host
+men
+party
+press
+pw
+racing
+review
+science
+stream
+su
+support
+surf
+today
+tokyo
+trade
+vip
+webcam
+win
+world
+xin
+zone
+rocks
+site
+space
+fun
+autos
+boats
+motorcycles
+homes
+hair
+skin
+makeup
+beauty

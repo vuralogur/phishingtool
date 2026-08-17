@@ -49,6 +49,12 @@ SOFT_IDS = {
     # informational / online-record absence
     "no_spf_record", "no_dmarc_record", "no_received_headers",
     "private_origin_ip", "qr_code_url", "msg_no_transport_headers",
+    # A lower Authentication-Results disagreeing with the authoritative one is
+    # normal after a forward; it explains the auth line, it must not drive it.
+    "auth_results_conflict",
+    # Already acted on where it matters (the trust discount is withheld); as a
+    # score it would double-count the same observation.
+    "auth_claim_unverifiable",
 }
 
 # Soft-signal weight multiplier by authentication level.
