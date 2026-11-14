@@ -29,6 +29,8 @@ built-in value::
     soft_pileup = 30       # hard > 0 and total >= this -> medium
     allowlist = 22         # trusted sender with hard < this -> low
     auth_cap = 20          # most SPF/DKIM/DMARC failures add up to (100 = no cap)
+    soft_stack_min = 2     # hard < medium, sender not DMARC-pass: this many distinct
+    soft_stack = 15        # carrier signals worth this much -> medium (min 0 = off)
 
     [soft_multiplier]      # authentication level -> soft-signal scale (0..1)
     pass = 0.3
@@ -74,7 +76,7 @@ class Config:
     the report can say what was overridden without diffing anything itself.
     """
     weights: dict          # indicator id -> weight, replaces the check's own
-    thresholds: dict       # medium / high / critical / soft_pileup / allowlist
+    thresholds: dict       # every key of scoring.THRESHOLDS
     soft_mult: dict        # auth level -> soft multiplier
     soft_ids: frozenset    # which indicators count as soft
     source: str = ""

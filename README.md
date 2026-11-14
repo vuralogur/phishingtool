@@ -307,11 +307,12 @@ yumuşak sinyaller ×0.3'e iner; kısmi (SPF/DKIM pass) ×0.6; başarısız/yok 
 Sert sinyaller etkilenmez.
 
 **3. Kanıt desteği.** Verdict **sert-sinyal toplamına** bakar. Sadece yumuşak
-sinyal varsa (sert = 0) sonuç **daima low** — kaç tane olursa olsun.
+sinyal varsa (sert = 0) sonuç **low** kalır — tek istisna aşağıdaki taşıyıcı
+sinyal yığınıdır (madde 6).
 
 | Sert toplam | Verdict  |
 |-------------|----------|
-| 0 (yalnız yumuşak) | low |
+| 0 (yalnız yumuşak) | low (taşıyıcı yığını varsa medium) |
 | 10–21       | medium   |
 | 22–44       | high     |
 | 45+         | critical |
@@ -331,6 +332,33 @@ kullanımlık kod mailleri phishing ile aynı kelimeleri kullanır, destek
 sistemleri de Reply-To'yu başka domaine yazar. Reply-To ücretsiz posta kutusuna
 (gmail vb.) gidiyorsa indirim yoktur. Başka sert kanıtla birlikte yine toplanır.
 
+**6. Taşıyıcı sinyal yığını.** Yumuşak sinyallerin tek başına `medium`
+edebildiği tek yol. Yumuşak kümenin çoğu toplu postanın doğal gürültüsüdür:
+aciliyet dili, genel hitap, tıklama tracker'ı, ESP alt alan adı, gizli ön
+başlık. Kimlik doğrulama satırı olmadan kaydedilmiş meşru bir bülten bunlardan
+sahte bir mail kadar puan toplar; bu yüzden toplam puan ikisini ayıramaz.
+Aşağıdaki **taşıyıcı** sinyaller farklıdır — mailin nereye götürdüğünü ya da ne
+taşıdığını anlatır ve sıradan posta altyapısı bunları üretmez:
+
+`url_shortener`, `suspicious_tld`, `punycode_domain`, `at_in_url`,
+`tld_swap_domain`, `macro_document`, `mime_extension_mismatch`, `qr_code_url`,
+`meta_refresh_redirect`, `base_tag_href`, `hidden_iframe`, `obfuscated_script`
+
+Kural: gönderen **DMARC pass değilse** ve en az **2 farklı** taşıyıcı sinyal
+toplam **15 puan** ediyorsa verdict `medium` olur (daha yukarı asla). Tek sinyal
+yetmez: bültendeki bir `t.co` linki ya da şirket içi tek bir `.docm` `low`
+kalır. Puan güven çarpanıyla ölçeklenir, yani kısmi doğrulanmış gönderende
+(×0.6) daha uzun bir yığın gerekir. Rapor hangi sinyalleri saydığını yazar:
+
+```
+Verdict nedeni: sert kanıt yetersiz, ama taşıyıcı sinyaller üst üste (url_shortener, suspicious_tld = 16 puan) → medium
+```
+
+Eşikler `[thresholds] soft_stack_min` / `soft_stack` ile değişir;
+`soft_stack_min = 0` kuralı kapatır. Kural **DMARC pass eden** saldırgan
+domainini yakalamaz (SPF/DKIM/DMARC kurmak saldırgan için de kolaydır) — o
+durumda yumuşak sinyaller eskisi gibi `low` kalır.
+
 **Skor kırılımı raporda.** Puan düz toplam olmadığı için her rapor "bu sayı
 nereden geldi, verdict'i ne belirledi" sorusunu iki satırda kapatır — düz
 metinde, rich tablosunda, GUI'de ve `--json` çıktısında:
@@ -344,7 +372,8 @@ Verdict nedeni: sert toplam ≥ 22 → high  ·  auth=pass (yumuşak çarpan ×0
 `multiplier`, `auth_level`, `hard_count`, `soft_count`, `trusted`, `capped`
 (puan 100'de kırpıldı mı), `reason` (verdict'i belirleyen kural anahtarı),
 `auth_raw` / `auth_trimmed` (auth ailesi tavana takıldıysa ham toplam ve kırpılan
-puan, aksi hâlde 0), `config` (ayar dosyası kullanıldıysa yolu + değişen bölümler, yoksa `null`).
+puan, aksi hâlde 0), `stack` / `stack_ids` (verdict'i taşıyıcı yığını belirlediyse
+sayılan puan ve göstergeler, aksi hâlde 0 ve `[]`), `config` (ayar dosyası kullanıldıysa yolu + değişen bölümler, yoksa `null`).
 
 **First-party bastırma:** link gönderenin kendi domainine aitse (kendi tıklama
 tracker'ı) `anchor_href_mismatch`, `open_redirect`, `random_host` ateşlenmez.
@@ -523,7 +552,7 @@ seçenekler ve açıklamaları: [`config.example.toml`](config.example.toml).
 ## Testler
 
 ```bash
-python -m pytest -q      # 407 test
+python -m pytest -q      # 448 test
 ```
 
 Her push ve PR'da GitHub Actions bunları çalıştırır: **opsiyonel bağımlılık

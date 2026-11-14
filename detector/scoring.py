@@ -10,8 +10,10 @@ Two ideas keep false positives down on legitimate (often marketing) mail:
    a compromised but authenticated account is still dangerous.
 
 2. Corroboration - the verdict is driven by the HARD-signal subtotal. Soft
-   signals alone (hard subtotal 0) never push past "low"; they only sharpen a
-   verdict that hard evidence already justifies.
+   signals sharpen a verdict that hard evidence already justifies; on their own
+   (hard subtotal 0) they stay "low", with one narrow exception: several
+   distinct carrier signals (``STACK_IDS``) from a sender that is not
+   DMARC-authenticated reach "medium" - never higher.
 
 Because neither is a plain sum, every Result carries a ``Breakdown`` (subtotals,
 the multiplier that was applied, and the verdict rule that fired) so the report
@@ -68,7 +70,8 @@ SOFT_IDS = {
 SOFT_MULT = {"pass": 0.3, "partial": 0.6, "fail": 1.0, "none": 1.0}
 
 # Verdict cut-offs, all read against the HARD subtotal except soft_pileup (which
-# is read against the capped total) - see the ladder at the end of score().
+# is read against the capped total) and the soft_stack pair (read against the
+# STACK_IDS signals only) - see the ladder at the end of score().
 THRESHOLDS = {
     "medium": 10,
     "high": 22,
@@ -76,7 +79,33 @@ THRESHOLDS = {
     "soft_pileup": 30,   # hard > 0 and total >= this -> medium
     "allowlist": 22,     # trusted sender staying under this -> low
     "auth_cap": 20,      # most the auth-failure family may add to the hard subtotal
+    # Hard evidence below "medium", sender not DMARC-authenticated: this many
+    # distinct STACK_IDS signals (0 = rule off) worth this many points -> medium.
+    "soft_stack_min": 2,
+    "soft_stack": 15,
 }
+
+# The one way soft signals reach "medium" on their own. Most of SOFT_IDS is what
+# bulk mail produces by construction - urgent wording, a generic greeting, a
+# click-tracker redirect on a random ESP host, a hidden preheader - and a
+# perfectly legitimate newsletter saved without its Authentication-Results
+# scores as high on those as a phish does, so no points threshold over the whole
+# soft set can separate the two. The ids below are different in kind: they
+# describe where the mail leads or what it carries, and ordinary mail plumbing
+# does not emit them. One of them is still an anecdote (a t.co link, an internal
+# .docm); two together, from a sender nobody vouched for, is a pattern.
+# Deliberately absent: tone (urgency_language, generic_greeting), tracker
+# plumbing (open_redirect, random_host, excessive_subdomains), hidden_text,
+# archive_attachment, pdf_embedded_file (e-invoices embed XML), and every
+# auth-category note - "not authenticated" is this rule's precondition, counting
+# it again as evidence would use the same fact twice.
+STACK_IDS = frozenset({
+    "url_shortener", "suspicious_tld", "punycode_domain", "at_in_url",
+    "tld_swap_domain",
+    "macro_document", "mime_extension_mismatch", "qr_code_url",
+    "meta_refresh_redirect", "base_tag_href", "hidden_iframe",
+    "obfuscated_script",
+})
 
 # One root cause, many headers. A mail that fails DMARC has by definition failed
 # aligned SPF and aligned DKIM, and --online re-measures the same three things -
@@ -102,6 +131,8 @@ class Breakdown:
     it differed - a score is only reproducible if you know which model made it.
     ``auth_raw`` is what the auth-failure family added up to before its cap and
     ``auth_trimmed`` how much the cap took off; ``hard`` is already net of it.
+    ``stack``/``stack_ids`` are set only when the ``soft_stack`` rule decided the
+    verdict: the points it counted and the indicators they came from.
     """
     hard: float
     soft_raw: float
@@ -117,6 +148,8 @@ class Breakdown:
     config_changed: tuple = ()
     auth_raw: float = 0.0
     auth_trimmed: float = 0.0
+    stack: float = 0.0
+    stack_ids: tuple = ()
 
     def to_dict(self) -> dict:
         return {
@@ -133,6 +166,9 @@ class Breakdown:
             # 0 unless the auth-failure family hit its cap (see AUTH_FAIL_IDS).
             "auth_raw": round(self.auth_raw, 2),
             "auth_trimmed": round(self.auth_trimmed, 2),
+            # 0 / [] unless reason == "soft_stack" (see STACK_IDS).
+            "stack": round(self.stack, 2),
+            "stack_ids": list(self.stack_ids),
             # null = the built-in model; otherwise which file changed what.
             "config": ({"source": self.config_source,
                         "changed": list(self.config_changed)}
@@ -198,8 +234,19 @@ def score(indicators, auth, from_rdom="", level=None, allowlist=None,
     soft_raw = 0.0
     auth_raw = 0.0
     hard_n = soft_n = 0
+    stack = 0.0
+    stack_ids = []
     for i in indicators:
-        if i.id in soft_ids:
+        soft = i.id in soft_ids
+        # Distinct ids: the same signal reported twice is still one signal.
+        # Scaled like any soft signal, so a half-trusted sender ("partial") needs
+        # a taller stack than an unknown one. An id a config promoted to hard
+        # still counts, at full weight - making a signal stricter must never
+        # lower a verdict.
+        if i.id in STACK_IDS and i.weight > 0 and i.id not in stack_ids:
+            stack += i.weight * (mult if soft else 1.0)
+            stack_ids.append(i.id)
+        if soft:
             soft_raw += i.weight
             soft_n += 1
         else:
@@ -220,6 +267,15 @@ def score(indicators, auth, from_rdom="", level=None, allowlist=None,
     # tradecraft is present.
     trusted = level == "pass" and bool(from_rdom) and from_rdom in allowlist
 
+    # A DMARC-authenticated sender is out of the rule altogether - there, soft
+    # signals alone stay "low" as they always have. No "hard == 0" condition: the
+    # ladder below only gets here when hard evidence is too weak to decide, and
+    # a weak hard signal on top of a stack must not score lower than the stack.
+    stack_min = thresholds.get("soft_stack_min", THRESHOLDS["soft_stack_min"])
+    stacked = (level != "pass" and stack_min > 0
+               and len(stack_ids) >= stack_min
+               and stack >= thresholds.get("soft_stack", THRESHOLDS["soft_stack"]))
+
     if trusted and hard_sum < thresholds["allowlist"]:
         verdict, reason = "low", "allowlist"
     elif hard_sum >= thresholds["critical"]:
@@ -231,6 +287,10 @@ def score(indicators, auth, from_rdom="", level=None, allowlist=None,
     elif hard_sum > 0 and total >= thresholds["soft_pileup"]:
         # a hard signal exists and soft noise piles on top
         verdict, reason = "medium", "soft_pileup"
+    elif stacked:
+        # hard evidence absent or weak, but several carrier signals from an
+        # unvouched sender
+        verdict, reason = "medium", "soft_stack"
     else:
         verdict = "low"
         reason = "weak_hard_evidence" if hard_sum > 0 else "no_hard_evidence"
@@ -242,6 +302,8 @@ def score(indicators, auth, from_rdom="", level=None, allowlist=None,
         config_source=getattr(config, "source", ""),
         config_changed=tuple(getattr(config, "changed", ())),
         auth_raw=auth_raw if auth_trimmed else 0.0, auth_trimmed=auth_trimmed,
+        stack=stack if reason == "soft_stack" else 0.0,
+        stack_ids=tuple(stack_ids) if reason == "soft_stack" else (),
     )
     ordered = sorted(
         indicators,

@@ -58,6 +58,7 @@ _REASON_TR = {
     "hard_high": "sert toplam ≥ 22",
     "hard_medium": "sert toplam ≥ 10",
     "soft_pileup": "sert iz var, yumuşak yığılmayla toplam ≥ 30",
+    "soft_stack": "sert kanıt yetersiz, ama taşıyıcı sinyaller üst üste",
     "weak_hard_evidence": "sert toplam < 10, yumuşak yığılma da yok",
     "no_hard_evidence": "sert iz yok — yalnız yumuşak sinyal",
 }
@@ -96,6 +97,11 @@ def breakdown_lines(result) -> list:
     reason = _REASON_TR.get(b.reason, b.reason)
     if not b.hard_count and not b.soft_count:
         reason = "hiç gösterge yok"
+    # The one rule that is not a plain cut-off: name the signals it counted, or
+    # "medium" next to a hard subtotal under 10 reads as a contradiction.
+    stack_ids = getattr(b, "stack_ids", ())
+    if b.reason == "soft_stack" and stack_ids:
+        reason += " (" + ", ".join(stack_ids) + " = " + _num(b.stack) + " puan)"
     # The auth-failure family hit its cap: say so, or "sert 20" next to three
     # 15-point indicators looks like an arithmetic error.
     trimmed = getattr(b, "auth_trimmed", 0)

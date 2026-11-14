@@ -225,18 +225,27 @@ def test_auth_level_collapse():
     assert auth_level({"spf": "none", "dkim": "none", "dmarc": "none"}) == "none"
 
 
-def test_soft_signals_alone_never_exceed_low():
+def test_tone_and_plumbing_alone_never_exceed_low():
+    """Bulk-mail noise stays low however much of it piles up.
+
+    The carrier-signal exception (two of url_shortener / suspicious_tld / ...)
+    has its own file: tests/test_soft_stack.py.
+    """
     from detector.scoring import score
     from detector.indicators import Indicator
     softs = [
         Indicator("urgency_language", "content", "medium", 12, "e", "x"),
         Indicator("generic_greeting", "content", "low", 4, "e", "x"),
         Indicator("url_shortener", "url", "medium", 8, "e", "x"),
-        Indicator("suspicious_tld", "url", "medium", 8, "e", "x"),
+        Indicator("open_redirect", "url", "medium", 10, "e", "x"),
+        Indicator("random_host", "url", "low", 6, "e", "x"),
         Indicator("excessive_subdomains", "url", "low", 6, "e", "x"),
+        Indicator("hidden_text", "html", "low", 8, "e", "x"),
+        Indicator("from_returnpath_mismatch", "auth", "medium", 8, "e", "x"),
     ]
     r = score(softs, {"spf": "none", "dkim": "none", "dmarc": "none"})
-    assert r.verdict == "low"  # no hard signal -> cannot exceed low
+    assert r.score == 62
+    assert r.verdict == "low"  # no hard signal, one carrier signal -> low
 
 
 def test_brand_mention_in_body_is_not_impersonation():

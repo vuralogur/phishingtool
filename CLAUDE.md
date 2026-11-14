@@ -47,7 +47,7 @@ python -m detector.cli bench corpus/ [--threshold high] [--json]
 # GUI
 python run_gui.py
 # testler
-python -m pytest -q      # 407 test (CI: 3.11–3.14 Linux + 3.12 Windows)
+python -m pytest -q      # 448 test (CI: 3.11–3.14 Linux + 3.12 Windows)
 ```
 
 ## Mimari
@@ -99,7 +99,7 @@ python -m pytest -q      # 407 test (CI: 3.11–3.14 Linux + 3.12 Windows)
 - `detector/scoring.py` — güven-farkındalıklı skor + verdict. `Result.breakdown`
   (`Breakdown`): sert/yumuşak alt toplam, uygulanan çarpan, sayımlar, `trusted`,
   `capped`, verdict'i belirleyen kural anahtarı `reason` (`hard_critical|
-  hard_high|hard_medium|soft_pileup|allowlist|weak_hard_evidence|no_hard_evidence`)
+  hard_high|hard_medium|soft_pileup|soft_stack|allowlist|weak_hard_evidence|no_hard_evidence`)
   ve `config_source`/`config_changed`. Modül sabitleri (`SOFT_IDS`, `SOFT_MULT`,
   `THRESHOLDS`) **varsayılan**; `score(..., config=)` verilirse hepsi o nesneden
   okunur ve `weights` `dataclasses.replace` ile uygulanır (çağıranın gösterge
@@ -165,7 +165,8 @@ Düz toplam DEĞİL. `detector/scoring.py`:
 2. **Güven çarpanı** (`SOFT_MULT`) — `auth_level`: DMARC pass → yumuşak ×0.3,
    kısmi ×0.6, fail/none ×1.0. **Sert sinyaller hiç etkilenmez.**
 3. **Kanıt desteği** — verdict **sert-toplama** dayanır: `<10 low · 10–21 medium ·
-   22–44 high · 45+ critical`. Yalnız yumuşak sinyal (sert=0) → **daima low**.
+   22–44 high · 45+ critical`. Yalnız yumuşak sinyal (sert=0) → **low**; tek
+   istisna madde 8.
 4. **First-party bastırma** — link gönderenin domainine aitse (kendi tracker'ı)
    `anchor_href_mismatch`/`open_redirect`/`random_host` ateşlenmez.
 5. **Allowlist** — `detector/data/trusted_domains.txt`: DMARC-pass + listedeki
@@ -179,6 +180,20 @@ Düz toplam DEĞİL. `detector/scoring.py`:
    10→5 (Reply-To `headers.FREEMAIL` içindeyse indirim yok). Sert kalırlar,
    başka kanıtla toplanırlar; tek başlarına `medium` edemezler. `[weights]`
    override'ı bu indirimi ezer.
+8. **Taşıyıcı sinyal yığını** (`reason = soft_stack`) — yumuşak sinyalin tek
+   başına `medium` edebildiği tek yol, daha yukarı asla. `scoring.STACK_IDS`
+   (kısaltıcı, şüpheli TLD, punycode, `@`, tld-swap, makrolu belge, MIME
+   uyuşmazlığı, QR, meta-refresh, `<base>`, gizli iframe, obfuscated JS):
+   `auth_level != "pass"` + en az `soft_stack_min` = 2 **farklı** id + çarpanlı
+   toplam ≥ `soft_stack` = 15. Ton (aciliyet/hitap), tracker gürültüsü
+   (`open_redirect`/`random_host`/`excessive_subdomains`), `hidden_text`,
+   arşiv ve **tüm auth-kategorisi notlar bilerek dışarıda**: A-R'siz meşru ESP
+   bülteni bunlardan phishing kadar puan toplar, puan eşiği ayıramaz.
+   Merdivende `soft_pileup`'tan sonra gelir, "sert == 0" şartı yok (zayıf sert
+   iz + yığın, yığından düşük çıkmasın); config ile sert'e taşınan id tam
+   ağırlıkla yine sayılır. `soft_stack_min = 0` kuralı kapatır.
+   `Breakdown.stack`/`stack_ids` yalnız kural karar verdiğinde dolu; rapor
+   satırı sayılan id'leri yazar. `tests/test_soft_stack.py` iki taraftan sınar.
 
 **Yanlış-pozitif dersleri** (`tests/test_false_positives.py` iki taraftan sınar):
 `combosquat_domain` = marka + `lure_words.txt` kelimeleri (etiketin markadan

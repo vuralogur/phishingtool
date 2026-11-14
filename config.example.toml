@@ -33,6 +33,14 @@
 # auth_cap = 20               # SPF/DKIM/DMARC başarısızlıklarının sert toplama
 #                             # ekleyebileceği en fazla puan (tek kök neden, tek
 #                             # sayım). 100 = tavan yok (eski davranış).
+# soft_stack_min = 2          # Sert kanıt medium'a yetmiyor + gönderen DMARC pass
+#                             # değil: en az bu
+# soft_stack = 15             # kadar FARKLI taşıyıcı sinyal (kısaltıcı, şüpheli
+#                             # TLD, punycode, makrolu belge, meta-refresh...;
+#                             # liste: scoring.STACK_IDS) ve bu kadar puan
+#                             # -> medium. Aciliyet/hitap/tracker sayılmaz.
+#                             # soft_stack_min = 0 kuralı kapatır (eski davranış:
+#                             # yalnız yumuşak sinyal = daima low).
 
 # --- Yumuşak sinyal çarpanı ---------------------------------------------------
 # Kimlik doğrulama seviyesine göre yumuşak sinyallerin ölçeği (0..1).
