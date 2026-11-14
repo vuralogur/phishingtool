@@ -30,6 +30,9 @@
 # critical = 45
 # soft_pileup = 30            # sert > 0 ve toplam >= bu  -> medium
 # allowlist = 22              # allowlist'teki gönderen bunun altındaysa -> low
+# auth_cap = 20               # SPF/DKIM/DMARC başarısızlıklarının sert toplama
+#                             # ekleyebileceği en fazla puan (tek kök neden, tek
+#                             # sayım). 100 = tavan yok (eski davranış).
 
 # --- Yumuşak sinyal çarpanı ---------------------------------------------------
 # Kimlik doğrulama seviyesine göre yumuşak sinyallerin ölçeği (0..1).

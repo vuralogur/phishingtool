@@ -39,8 +39,12 @@ SOFT_IDS = {
     # url noise common in marketing / ESP infrastructure
     "url_shortener", "suspicious_tld", "excessive_subdomains", "at_in_url",
     "punycode_domain", "open_redirect", "random_host",
+    # Same name under another ending: a squat, or the brand's own side domain.
+    # Generic-word names (apple, amazon, turkiye) make it too noisy to stand alone.
+    "tld_swap_domain",
     # attachment "capability" (not confirmed malicious)
     "archive_attachment", "macro_document", "mime_extension_mismatch",
+    "pdf_embedded_file",
     # html quirks marketing HTML also produces
     "meta_refresh_redirect", "base_tag_href", "hidden_iframe", "hidden_text",
     "obfuscated_script",
@@ -55,6 +59,9 @@ SOFT_IDS = {
     # Already acted on where it matters (the trust discount is withheld); as a
     # score it would double-count the same observation.
     "auth_claim_unverifiable",
+    # Likewise: the discount is already withheld when every pass is for another
+    # domain; and a brand address with no verdict in the file proves nothing.
+    "auth_pass_unaligned", "brand_domain_unverified",
 }
 
 # Soft-signal weight multiplier by authentication level.
@@ -68,7 +75,20 @@ THRESHOLDS = {
     "critical": 45,
     "soft_pileup": 30,   # hard > 0 and total >= this -> medium
     "allowlist": 22,     # trusted sender staying under this -> low
+    "auth_cap": 20,      # most the auth-failure family may add to the hard subtotal
 }
+
+# One root cause, many headers. A mail that fails DMARC has by definition failed
+# aligned SPF and aligned DKIM, and --online re-measures the same three things -
+# six indicators, one fact: "this sender is not authenticated as the From
+# domain". Summed, that single fact reached "high" on its own (a forwarded
+# mailing-list post breaks all three), so the family is capped: alone it earns a
+# "medium", and it takes independent evidence to go further.
+AUTH_FAIL_IDS = frozenset({
+    "spf_fail", "spf_softfail", "dkim_fail", "dmarc_fail",
+    "spf_live_fail", "spf_live_softfail", "dkim_verify_fail",
+    "dmarc_policy_violation",
+})
 
 
 @dataclass
@@ -80,6 +100,8 @@ class Breakdown:
     ``config_source``/``config_changed`` say whether the numbers above came from
     the built-in model ("" = yes) or from an override file, and which tables of
     it differed - a score is only reproducible if you know which model made it.
+    ``auth_raw`` is what the auth-failure family added up to before its cap and
+    ``auth_trimmed`` how much the cap took off; ``hard`` is already net of it.
     """
     hard: float
     soft_raw: float
@@ -93,6 +115,8 @@ class Breakdown:
     reason: str
     config_source: str = ""
     config_changed: tuple = ()
+    auth_raw: float = 0.0
+    auth_trimmed: float = 0.0
 
     def to_dict(self) -> dict:
         return {
@@ -106,6 +130,9 @@ class Breakdown:
             "trusted": self.trusted,
             "capped": self.capped,
             "reason": self.reason,
+            # 0 unless the auth-failure family hit its cap (see AUTH_FAIL_IDS).
+            "auth_raw": round(self.auth_raw, 2),
+            "auth_trimmed": round(self.auth_trimmed, 2),
             # null = the built-in model; otherwise which file changed what.
             "config": ({"source": self.config_source,
                         "changed": list(self.config_changed)}
@@ -169,6 +196,7 @@ def score(indicators, auth, from_rdom="", level=None, allowlist=None,
 
     hard_sum = 0.0
     soft_raw = 0.0
+    auth_raw = 0.0
     hard_n = soft_n = 0
     for i in indicators:
         if i.id in soft_ids:
@@ -177,6 +205,12 @@ def score(indicators, auth, from_rdom="", level=None, allowlist=None,
         else:
             hard_sum += i.weight
             hard_n += 1
+            if i.id in AUTH_FAIL_IDS:
+                auth_raw += i.weight
+    # .get(): a hand-built policy object written before the cap existed still works.
+    auth_cap = thresholds.get("auth_cap", THRESHOLDS["auth_cap"])
+    auth_trimmed = max(0.0, auth_raw - auth_cap)
+    hard_sum -= auth_trimmed
     soft_sum = soft_raw * mult
 
     raw_total = int(round(hard_sum + soft_sum))
@@ -207,6 +241,7 @@ def score(indicators, auth, from_rdom="", level=None, allowlist=None,
         trusted=trusted, capped=raw_total > MAX_SCORE, reason=reason,
         config_source=getattr(config, "source", ""),
         config_changed=tuple(getattr(config, "changed", ())),
+        auth_raw=auth_raw if auth_trimmed else 0.0, auth_trimmed=auth_trimmed,
     )
     ordered = sorted(
         indicators,

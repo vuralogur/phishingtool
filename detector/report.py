@@ -96,8 +96,14 @@ def breakdown_lines(result) -> list:
     reason = _REASON_TR.get(b.reason, b.reason)
     if not b.hard_count and not b.soft_count:
         reason = "hiç gösterge yok"
+    # The auth-failure family hit its cap: say so, or "sert 20" next to three
+    # 15-point indicators looks like an arithmetic error.
+    trimmed = getattr(b, "auth_trimmed", 0)
+    hard_note = str(b.hard_count) + " gösterge"
+    if trimmed:
+        hard_note += "; auth ailesi " + _num(b.auth_raw) + "→" + _num(b.auth_raw - trimmed)
     lines = [
-        "Skor kırılımı: sert " + _num(b.hard) + " (" + str(b.hard_count) + " gösterge)"
+        "Skor kırılımı: sert " + _num(b.hard) + " (" + hard_note + ")"
         " + " + soft + " (" + str(b.soft_count) + " gösterge)  =  " + total,
         "Verdict nedeni: " + reason + " → " + result.verdict +
         "  ·  auth=" + b.auth_level + " (yumuşak çarpan ×" + _num(b.multiplier) + ")" +

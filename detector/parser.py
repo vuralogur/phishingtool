@@ -9,9 +9,23 @@ from pathlib import Path
 import re
 
 from . import msg as _msg
-from .util import domain_of_address
+from .util import domain_of_address, looks_like_domain, strip_url_noise
 
 _URL_RE = re.compile(r"""https?://[^\s"'<>)\]]+""", re.IGNORECASE)
+# A URL typed without a scheme ("www.x.com", "x.com/login"). Mail clients turn
+# these into clickable links, so leaving the scheme off must not hide a link.
+# The lookbehind keeps it from firing inside an address (user@x.com) or in the
+# middle of another token; _text_urls() then decides whether it is really a URL.
+_BARE_URL_RE = re.compile(
+    r"""(?<![\w@./:\\-])((?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d{1,5})?(?:/[^\s"'<>)\]]*)?)""",
+    re.IGNORECASE,
+)
+# "https:" followed by any run of slashes or backslashes - browsers accept every
+# spelling ("https:\\x", "https:/x", "https:x") as the same absolute URL.
+_WEB_SCHEME_RE = re.compile(r"^(https?):[\\/]*", re.IGNORECASE)
+# Scheme-relative: "//x.com/login" (and its backslash spellings).
+_RELATIVE_SCHEME_RE = re.compile(r"^[\\/]{2,}")
+_CODE_SCHEMES = ("javascript:", "vbscript:")
 
 # The mail files this parser accepts - one list so a folder scan (batch, bench)
 # and the parser can never disagree about what counts as a mail.
@@ -68,49 +82,132 @@ class ParsedEmail:
     spf_received: list = field(default_factory=list)
 
 
-class _AnchorExtractor(HTMLParser):
-    """Collect (href, visible_text) pairs from <a> tags."""
+class _LinkExtractor(HTMLParser):
+    """Collect every place the HTML can send a click, plus the loose text.
+
+    ``links`` holds (target, visible_text) pairs: <a href> with its anchor text,
+    and <area href>, <form action>, <button/input formaction> with no text.
+    ``loose`` is the visible text *outside* anchors - a URL typed there is
+    auto-linked by the mail client. Anchor text is deliberately not part of it:
+    that is what the sender wants the eye to read, not where the click goes.
+    """
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.links = []
+        self.loose = []
+        self._href = None
+        self._text = []
+        self._skip = 0      # inside <script>/<style>: not text the reader sees
+
+    def finish(self):
+        """Close the anchor in progress - an <a> never closed is still a link."""
+        if self._href is not None:
+            self.links.append((self._href, "".join(self._text).strip()))
         self._href = None
         self._text = []
 
     def handle_starttag(self, tag, attrs):
-        if tag.lower() == "a":
-            href = dict(attrs).get("href")
-            if href:
-                self._href = href
-                self._text = []
+        tag = tag.lower()
+        attr = {k: (v or "") for k, v in attrs}
+        if tag == "a":
+            self.finish()
+            if attr.get("href"):
+                self._href = attr["href"]
+        elif tag == "area" and attr.get("href"):
+            self.links.append((attr["href"], ""))
+        elif tag == "form" and attr.get("action"):
+            self.links.append((attr["action"], ""))
+        elif tag in ("button", "input") and attr.get("formaction"):
+            self.links.append((attr["formaction"], ""))
+        elif tag in ("script", "style"):
+            self._skip += 1
 
     def handle_data(self, data):
+        if self._skip:
+            return
         if self._href is not None:
             self._text.append(data)
+        else:
+            self.loose.append(data)
 
     def handle_endtag(self, tag):
-        if tag.lower() == "a" and self._href is not None:
-            self.links.append((self._href, "".join(self._text).strip()))
-            self._href = None
-            self._text = []
+        tag = tag.lower()
+        if tag == "a":
+            self.finish()
+        elif tag in ("script", "style"):
+            self._skip = max(0, self._skip - 1)
+
+
+def normalize_href(href: str) -> str:
+    """An href as the browser resolves it, or "" when it is not a web link.
+
+    Only "http://..." used to count, so every other spelling a browser happily
+    follows was invisible to the URL checks: a leading space, "//host/path",
+    "https:\\\\host", "https:/host". They all come back as scheme://host/path.
+    """
+    h = strip_url_noise(href)
+    m = _WEB_SCHEME_RE.match(h)
+    if m:
+        scheme = m.group(1).lower()
+    else:
+        m = _RELATIVE_SCHEME_RE.match(h)
+        if not m:
+            return ""
+        # No page to inherit a scheme from inside a mail; clients assume https.
+        scheme = "https"
+    rest = h[m.end():]
+    # Backslashes are path separators to a browser - but only before the query.
+    cut = min([i for i in (rest.find("?"), rest.find("#")) if i >= 0] or [len(rest)])
+    rest = rest[:cut].replace("\\", "/") + rest[cut:]
+    return scheme + "://" + rest if rest else ""
+
+
+def _text_urls(text: str) -> list:
+    """URLs written in running text, with or without a scheme."""
+    text = text or ""
+    out = list(_URL_RE.findall(text))
+    # Blank the full URLs out first, so "?next=www.x.com/a" inside one of them is
+    # not counted again as a second link.
+    for m in _BARE_URL_RE.finditer(_URL_RE.sub(" ", text)):
+        token = m.group(1).rstrip(".,;:!?")
+        host = token.split("/", 1)[0].split(":", 1)[0]
+        # "Ltd.Sti" and "rapor.pdf" fit the pattern too. Require what makes a
+        # client link it: a real public suffix, and either "www." or a path.
+        if not (token.lower().startswith("www.") or "/" in token):
+            continue
+        if looks_like_domain(host):
+            out.append("http://" + token)
+    return out
 
 
 def _extract_links(html: str, text: str) -> list:
     links = []
+    loose = [text or ""]
     if html:
-        p = _AnchorExtractor()
+        p = _LinkExtractor()
         try:
             p.feed(html)
+            p.close()
         except Exception:
             pass
+        p.finish()
         for href, atext in p.links:
-            if href.lower().startswith(("http://", "https://")):
-                links.append(Link(text=atext, href=href))
+            web = normalize_href(href)
+            if web:
+                links.append(Link(text=atext, href=web))
+            elif strip_url_noise(href).lower().startswith(_CODE_SCHEMES):
+                # javascript:location='http://...' - the destination is inside
+                # the code; pull it out so the URL checks can judge it.
+                for inner in _URL_RE.findall(href):
+                    links.append(Link(text=atext, href=inner))
+        loose.append(" ".join(p.loose))
     seen = {l.href for l in links}
-    for m in _URL_RE.findall(text or ""):
-        if m not in seen:
-            links.append(Link(text="", href=m))
-            seen.add(m)
+    for chunk in loose:
+        for url in _text_urls(chunk):
+            if url not in seen:
+                links.append(Link(text="", href=url))
+                seen.add(url)
     return links
 
 
@@ -127,7 +224,15 @@ def _first_addr(value: str):
 
 
 def _bodies(msg):
-    text_body, html_body = "", ""
+    """Every text/plain and text/html body part, joined - not just the first.
+
+    A client renders the LAST part it understands, so a mail with a harmless
+    HTML part followed by the real one showed the reader a login form while the
+    analyzer read the decoy. Joining the parts means every check (links, forms,
+    wording, IOCs) sees all the markup the mail carries, whichever part a given
+    client picks.
+    """
+    texts, htmls = [], []
     if msg.is_multipart():
         for part in msg.walk():
             if part.is_multipart():
@@ -142,10 +247,10 @@ def _bodies(msg):
                 content = raw.decode("utf-8", "replace")
             if isinstance(content, bytes):
                 content = content.decode("utf-8", "replace")
-            if ctype == "text/plain" and not text_body:
-                text_body = content
-            elif ctype == "text/html" and not html_body:
-                html_body = content
+            if ctype == "text/plain":
+                texts.append(content)
+            elif ctype == "text/html":
+                htmls.append(content)
     else:
         ctype = msg.get_content_type()
         try:
@@ -156,10 +261,10 @@ def _bodies(msg):
             content = content.decode("utf-8", "replace")
         content = content or ""
         if ctype == "text/html":
-            html_body = content
+            htmls.append(content)
         else:
-            text_body = content
-    return text_body, html_body
+            texts.append(content)
+    return "\n".join(texts), "\n".join(htmls)
 
 
 def _attachments(msg):

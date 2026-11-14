@@ -28,6 +28,7 @@ built-in value::
     critical = 45
     soft_pileup = 30       # hard > 0 and total >= this -> medium
     allowlist = 22         # trusted sender with hard < this -> low
+    auth_cap = 20          # most SPF/DKIM/DMARC failures add up to (100 = no cap)
 
     [soft_multiplier]      # authentication level -> soft-signal scale (0..1)
     pass = 0.3

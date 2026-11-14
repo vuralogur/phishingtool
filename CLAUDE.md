@@ -47,7 +47,7 @@ python -m detector.cli bench corpus/ [--threshold high] [--json]
 # GUI
 python run_gui.py
 # testler
-python -m pytest -q      # 177 test (CI: 3.11–3.14 Linux + 3.12 Windows)
+python -m pytest -q      # 407 test (CI: 3.11–3.14 Linux + 3.12 Windows)
 ```
 
 ## Mimari
@@ -58,6 +58,13 @@ python -m pytest -q      # 177 test (CI: 3.11–3.14 Linux + 3.12 Windows)
   bodies, `links`, `attachments` [her ekin `payload` bytes'ı derin analiz için saklanır],
   `source_format` `eml|msg`, `header_source` `rfc822|mapi`). `parse_bytes()` OLE2
   imzasını görünce `.msg` dalına girer — `MAIL_GLOBS` klasör taramalarının tek kaynağı.
+  **Tüm** `text/plain` / `text/html` parçaları birleştirilir (`_bodies`): istemci
+  sonuncuyu gösterir, yalnız ilkini okumak kaçış yoluydu. `links` tarayıcının
+  izlediği her yazımı kapsar: `normalize_href()` (`//host`, baştaki boşluk,
+  `https:\\host` → `scheme://host`), `<area href>`, `<form action>`,
+  `formaction`, kapatılmamış `<a>`, `javascript:` içindeki URL, ve şemasız metin
+  adresleri (`_text_urls`: `www.` veya yol + gerçek public suffix şart). HTML'de
+  yalnız anchor **dışı** görünür metin taranır — anchor metni hedef değildir.
 - `detector/msg.py` — Outlook `.msg` okuyucu, **saf stdlib** (bağımlılık yok):
   MS-CFB kapsayıcı (FAT/mini-FAT/directory) + MAPI özellikleri → `EmailMessage`.
   `is_msg()`, `to_message() -> (msg, header_source)`, `MsgError`. Transport
@@ -137,12 +144,12 @@ python -m pytest -q      # 177 test (CI: 3.11–3.14 Linux + 3.12 Windows)
 
 | Modül | Ne bakar | Not |
 |-------|----------|-----|
-| `checks/headers.py` | SPF/DKIM/DMARC özeti (**güven sınırı**, aşağıda), from↔reply/return-path uyuşmazlığı, `display_name_spoof`, `msg_no_transport_headers`, `auth_results_conflict`, `auth_claim_unverifiable` | online: `no_spf_record` |
+| `checks/headers.py` | SPF/DKIM/DMARC özeti (**güven sınırı**, aşağıda), from↔reply/return-path uyuşmazlığı, `display_name_spoof`, `msg_no_transport_headers`, `auth_results_conflict`, `auth_claim_unverifiable`, `alignment()` → `auth_pass_unaligned`, `brand_domain_spoof` / `brand_domain_unverified` | online: `no_spf_record` |
 | `checks/auth_verify.py` | **Tier 1** kripto: DKIM imza doğrulama, canlı SPF, DMARC politikası, Received/IP adli | online-gated (Received adli offline) |
-| `checks/urls.py` | `anchor_href_mismatch` (first-party farkında), `ip_url`, punycode/homograph, shortener, suspicious_tld, `lookalike_domain` | |
+| `checks/urls.py` | `anchor_href_mismatch` (first-party farkında), `ip_url`, punycode/homograph, shortener, suspicious_tld, `lookalike_domain` | `ip_url` gizli yazımları da tanır (`util.canonical_ip`: ondalık/hex/sekizlik/IPv6) |
 | `checks/url_deep.py` | **Tier 2**: `open_redirect`, `combosquat_domain`, `brand_in_subdomain`, `confusable_brand` (IDN), `random_host` (DGA) | first-party farkında |
 | `checks/content.py` | `urgency_language`, `credential_request`, `generic_greeting`, `brand_impersonation` | brand_imp **kimlik-temelli** (aşağıda) |
-| `checks/html_forensics.py` | **Tier 2**: harici form POST, parola alanı, meta-refresh, `<base>`, gizli iframe, gizli metin, obfuscated JS | stdlib |
+| `checks/html_forensics.py` | **Tier 2**: harici form POST (`formaction` dahil), parola alanı, meta-refresh, `<base>`, gizli iframe, gizli metin, obfuscated JS, `active_content_link` (`javascript:`/`vbscript:`/`data:` href; `void(0)` ve `data:image` hariç) | stdlib |
 | `checks/attachments.py` | `double_extension`, `dangerous_attachment`, `macro_document`, arşiv, MIME uyuşmazlığı | ada göre |
 | `checks/attachment_deep.py` | **Tier 2**: `html_smuggling`, `macro_detected/autoexec`, `pdf_active_content`, `pdf_launch_action` | içeriğe göre; oletools opsiyonel |
 | `checks/qr.py` | **Tier 2** quishing: resim/`data:` içindeki QR çözüp URL denetler | opencv veya pyzbar opsiyonel; yoksa sessiz atlar |
@@ -163,6 +170,27 @@ Düz toplam DEĞİL. `detector/scoring.py`:
    `anchor_href_mismatch`/`open_redirect`/`random_host` ateşlenmez.
 5. **Allowlist** — `detector/data/trusted_domains.txt`: DMARC-pass + listedeki
    domain, sert iz yoksa **low**'a sabitlenir.
+6. **Auth ailesi tavanı** — `scoring.AUTH_FAIL_IDS` (spf/dkim/dmarc fail + canlı
+   karşılıkları) tek kök nedendir; sert toplama en fazla `THRESHOLDS["auth_cap"]`
+   = 20 ekler. Tek başına `medium`, `high` için bağımsız kanıt gerekir.
+   `Breakdown.auth_raw`/`auth_trimmed` + kırılım satırında `auth ailesi 42→20`.
+7. **Doğrulanmış gönderende zayıflayan iki sert gösterge** (check içinde, ctx
+   `auth_level == "pass"`): `credential_request` 12→6, `from_replyto_mismatch`
+   10→5 (Reply-To `headers.FREEMAIL` içindeyse indirim yok). Sert kalırlar,
+   başka kanıtla toplanırlar; tek başlarına `medium` edemezler. `[weights]`
+   override'ı bu indirimi ezer.
+
+**Yanlış-pozitif dersleri** (`tests/test_false_positives.py` iki taraftan sınar):
+`combosquat_domain` = marka + `lure_words.txt` kelimeleri (etiketin markadan
+kalan her parçası sözlükten kurulabilmeli; "marka + herhangi ek" `googleapis`/
+`amazonaws`/`pineapple`'ı vuruyordu). `credential_request` yalın `iban` ve
+`müşteri numara` aramaz, yalnız isteme biçimini (`...numaranızı`,
+`IBAN bilgilerinizi`). PDF adları `_pdf_name()` ile **tam** eşleşir (`/AA` ≠
+`/AAAAAA+Font`); `/OpenAction`/`/AA` tek başına bulgu değil; betiksiz
+`/EmbeddedFile` = yumuşak `pdf_embedded_file`. `macro_detected` OLE imzasıyla
+değil `_VBA_PROJECT` deposuyla ateşlenir (oletools okuyabildiyse onun sözü
+geçer). `mime_extension_mismatch` takma adları ve `application/octet-stream`'i
+uyuşmazlık saymaz.
 
 **ATT&CK etiketi skoru etkilemez** — saf metadata. Her gösterge `technique`/
 `technique_name` taşır; `Result.to_dict()` üst seviyede gruplanmış `techniques`
@@ -186,6 +214,23 @@ mekanizma `none` kalır — alttan doldurulmaz. `Received-SPF` ayrı alandan
 sonuç iddia ederse `auth_results_conflict` (yumuşak, ATT&CK'siz) raporlanır.
 Hiç `Received` yokken "pass" iddiası = `auth_claim_unverifiable` **ve**
 `analyzer.analyze()` `auth_level`'ı `none`'a düşürür (indirim yok).
+**Hizalama** (`headers.alignment(email) -> (state, foreign)`): en üst A-R'deki
+`header.d`/`header.i`/`smtp.mailfrom`/`header.from` From'un kayıtlı domainiyle
+karşılaştırılır. `aligned | unaligned | unknown | nopass | none`. `unaligned`
+(tüm pass'lar başka domain için) → `auth_pass_unaligned` (yumuşak, ATT&CK'siz)
+**ve** `analyzer.analyze()` `auth_level`'ı `none`'a düşürür. Özelliksiz yalın
+`spf=pass` = `unknown`, seviye korunur. `dmarc=pass header.from=baska.com` da
+`unaligned`'dır (iki-From hilesi).
+**Kimlik kontrolleri** (`tests/test_identity.py`): From `brands.txt`'deki gerçek
+bir domainde + A-R var ama hizalı pass yok (veya Received'sız pass iddiası) →
+`brand_domain_spoof` (sert 18); hiç A-R yok → `brand_domain_unverified`
+(yumuşak). `headers.FREEMAIL` ve `.msg`/mapi hariç. `urls.py` ve `url_deep.py`
+domain kontrollerini link döngüsünden sonra **From + Reply-To domainine** de
+uygular (`domain_checks` / `brand_checks`, aynı `add()` → tek bulgu).
+`tld_swap_domain` (`urls._tld_swap`) yumuşak: aynı ad, farklı uzantı; 2 harfli
+ülke uzantısı şüpheli listede değilse ve ad < 4 harfse atlanır.
+`brand_impersonation` kimliği `util.skeleton()` ile de karşılaştırır (NFKC +
+görünmez karakter silme + `util.CONFUSABLES` Kiril/Yunan eşlemesi).
 `util.ascii_fold()` marka/anahtar kelime karşılaştırmalarını ASCII'ye katlar
 (`str.lower()` "I"→"ı" yapamaz; "VAKIFBANK" aksi hâlde hiç eşleşmiyordu).
 `util.looks_like_domain()` "Ltd.Sti" gibi domain olmayan token'ları eler,
@@ -205,6 +250,8 @@ Sözlükler **paket içinde** (wheel'e girer, `phishingtool` her dizinden bulur)
 - `brands.txt` — `marka,domain1;domain2`
 - `suspicious_tlds.txt`, `urgency_keywords.txt` (TR+EN)
 - `trusted_domains.txt` — güvenilen gönderen allowlist'i
+- `lure_words.txt` — combosquat tuzak kelimeleri (ctx `lure_words`); özel
+  `--data-dir`'de yoksa `build_context` paket içi listeye düşer
 
 **Skorlama ayarı ayrı** (`--config config.toml`, `PHISHINGTOOL_CONFIG`): sözlük
 değil politika. Şablon repo kökünde `config.example.toml`; şema ve kurallar

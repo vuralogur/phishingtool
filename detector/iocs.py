@@ -16,7 +16,7 @@ import ipaddress
 import re
 from dataclasses import dataclass, field
 
-from .util import domain_of_address, is_ip, registered_domain
+from .util import canonical_ip, domain_of_address, registered_domain
 
 # Same shape as the parser's URL regex: stop at whitespace, quotes and brackets.
 _URL_RE = re.compile(r"""https?://[^\s"'<>)\]]+""", re.IGNORECASE)
@@ -26,7 +26,8 @@ _URL_RE = re.compile(r"""https?://[^\s"'<>)\]]+""", re.IGNORECASE)
 _ATTR_URL_RE = re.compile(r"""(?i)=\s*["']?\s*(https?://[^\s"'<>)\]]+)""")
 _IPV4_RE = re.compile(r"\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b")
 _SCHEME_RE = re.compile(r"(?i)\bhttp(s?)://")
-_HOST_RE = re.compile(r"(?i)^https?://(?:[^/@]*@)?([^/:?#]+)")
+# The bracketed alternative keeps an IPv6 literal whole ("[2001:db8::1]").
+_HOST_RE = re.compile(r"(?i)^https?://(?:[^/@]*@)?(\[[^\]]+\]|[^/:?#]+)")
 
 
 @dataclass
@@ -69,8 +70,11 @@ def collect(email) -> IOCSet:
         host = _host_of(href)
         if not host:
             continue
-        if is_ip(host):
-            ips.add(host)
+        # Plain notation, not the URL's spelling: a firewall blocks 192.168.1.1,
+        # it has no idea what "3232235777" or "0xC0A80101" is.
+        ip = canonical_ip(host)
+        if ip:
+            ips.add(ip)
         else:
             hosts.add(host)
 

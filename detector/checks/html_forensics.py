@@ -13,7 +13,7 @@ from html.parser import HTMLParser
 from urllib.parse import urlparse
 
 from ..indicators import Indicator
-from ..util import registered_domain
+from ..util import registered_domain, strip_url_noise
 
 _HIDDEN_STYLE = re.compile(
     r"(display\s*:\s*none|visibility\s*:\s*hidden|font-size\s*:\s*0"
@@ -26,6 +26,28 @@ _JS_OBFUSCATION = re.compile(
     re.IGNORECASE,
 )
 _META_URL = re.compile(r"url\s*=\s*([^;'\"]+)", re.IGNORECASE)
+# href="javascript:void(0)" and friends: a dead link sloppy templates use as a
+# placeholder. It runs nothing, so it must not be reported as code in a link.
+_NOOP_SCRIPT = re.compile(
+    r"javascript:\s*(?:void\s*\(\s*0?\s*\)|void\s+0|return\s+false|//.*)?\s*;?\s*",
+    re.IGNORECASE,
+)
+
+
+def _active_scheme(value: str) -> str:
+    """'javascript' / 'vbscript' / 'data' when a link runs code or carries a page.
+
+    Such a link has no web address for a URL filter to judge: the destination is
+    built by the script, or the whole page sits base64-encoded inside the href.
+    data:image/... is left alone - an embedded picture is not a destination.
+    """
+    v = strip_url_noise(value).lower()
+    if v.startswith(("javascript:", "vbscript:")):
+        return "" if _NOOP_SCRIPT.fullmatch(v) else v.split(":", 1)[0]
+    if v.startswith("data:"):
+        mediatype = v[5:].split(",", 1)[0].split(";", 1)[0].strip()
+        return "" if mediatype.startswith("image/") else "data"
+    return ""
 
 
 def _host(url: str) -> str:
@@ -44,6 +66,7 @@ class _Scan(HTMLParser):
         self.base_href = None
         self.meta_refresh = None    # target url
         self.scripts = []           # inline script bodies
+        self.active_links = []      # schemes of javascript:/data: links
         self.hidden_chars = 0
         self._hidden_stack = []     # tags currently hiding content
         self._in_script = False
@@ -54,6 +77,14 @@ class _Scan(HTMLParser):
         a = {k.lower(): (v or "") for k, v in attrs}
         style = a.get("style", "")
         hidden = bool(_HIDDEN_STYLE.search(style))
+
+        if t in ("a", "area"):
+            scheme = _active_scheme(a.get("href", ""))
+            if scheme:
+                self.active_links.append(scheme)
+        if t in ("button", "input") and a.get("formaction"):
+            # formaction overrides the form's own action for that one button.
+            self.form_actions.append(a["formaction"])
 
         if t == "form":
             self.form_actions.append(a.get("action", ""))
@@ -122,6 +153,14 @@ def run(email, online=False, ctx=None):
         out.append(Indicator("html_password_input", "html", "high", 16,
             "E-posta govdesinde parola giris alani (<input type=password>) var",
             "Mesru kurumlar sifreyi e-posta icindeki formla istemez."))
+
+    if s.active_links:
+        out.append(Indicator("active_content_link", "html", "high", 16,
+            "Baglanti web adresi yerine kod/veri semasi kullaniyor: "
+            + ", ".join(k + ":" for k in sorted(set(s.active_links))),
+            "javascript:/vbscript: baglantisi tiklaninca kod calistirir, data: "
+            "baglantisi sayfanin tamamini linkin icinde tasir - iki durumda da "
+            "hedef adres URL filtrelerinden gizlenir. Mesru mailde yeri yoktur."))
 
     if s.meta_refresh and _host(s.meta_refresh):
         out.append(Indicator("meta_refresh_redirect", "html", "medium", 12,

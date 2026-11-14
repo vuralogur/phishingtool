@@ -316,6 +316,21 @@ sinyal varsa (sert = 0) sonuç **daima low** — kaç tane olursa olsun.
 | 22–44       | high     |
 | 45+         | critical |
 
+**4. Tek kök neden, tek sayım.** SPF + DKIM + DMARC başarısızlığı üç ayrı kanıt
+değil, tek bir olgudur ("gönderen From domaini adına doğrulanamadı") — DMARC
+zaten diğer ikisinin özetidir, `--online` de aynı üçünü yeniden ölçer. Bu aile
+sert toplama en fazla **20 puan** ekler (`[thresholds] auth_cap`): tek başına
+`medium` eder, `high` için bağımsız bir kanıt daha gerekir. İçeriği temiz bir
+liste/yönlendirme maili artık yalnız bu yüzden `high` olmaz. Tavan uygulandığında
+kırılım satırı bunu yazar: `sert 20 (3 gösterge; auth ailesi 42→20)`.
+
+**5. Doğrulanmış gönderende bağlama duyarlı iki gösterge.** `credential_request`
+ve `from_replyto_mismatch` sert kalır ama gönderen DMARC pass ise tek başına
+verdict taşıyamayacak ağırlığa iner (12→6, 10→5): şifre sıfırlama / tek
+kullanımlık kod mailleri phishing ile aynı kelimeleri kullanır, destek
+sistemleri de Reply-To'yu başka domaine yazar. Reply-To ücretsiz posta kutusuna
+(gmail vb.) gidiyorsa indirim yoktur. Başka sert kanıtla birlikte yine toplanır.
+
 **Skor kırılımı raporda.** Puan düz toplam olmadığı için her rapor "bu sayı
 nereden geldi, verdict'i ne belirledi" sorusunu iki satırda kapatır — düz
 metinde, rich tablosunda, GUI'de ve `--json` çıktısında:
@@ -328,7 +343,8 @@ Verdict nedeni: sert toplam ≥ 22 → high  ·  auth=pass (yumuşak çarpan ×0
 `--json` çıktısında aynı veri `breakdown` nesnesidir: `hard`, `soft_raw`, `soft`,
 `multiplier`, `auth_level`, `hard_count`, `soft_count`, `trusted`, `capped`
 (puan 100'de kırpıldı mı), `reason` (verdict'i belirleyen kural anahtarı),
-`config` (ayar dosyası kullanıldıysa yolu + değişen bölümler, yoksa `null`).
+`auth_raw` / `auth_trimmed` (auth ailesi tavana takıldıysa ham toplam ve kırpılan
+puan, aksi hâlde 0), `config` (ayar dosyası kullanıldıysa yolu + değişen bölümler, yoksa `null`).
 
 **First-party bastırma:** link gönderenin kendi domainine aitse (kendi tıklama
 tracker'ı) `anchor_href_mismatch`, `open_redirect`, `random_host` ateşlenmez.
@@ -340,7 +356,8 @@ tracker'ı) `anchor_href_mismatch`, `open_redirect`, `random_host` ateşlenmez.
 
 **Başlık / kimlik doğrulama** — `spf_fail`/`spf_softfail`, `dkim_fail`, `dmarc_fail`,
 `from_replyto_mismatch`, `from_returnpath_mismatch`, `display_name_spoof`,
-`auth_claim_unverifiable`, `auth_results_conflict`, (online) `no_spf_record`.
+`auth_claim_unverifiable`, `auth_results_conflict`, `auth_pass_unaligned`,
+`brand_domain_spoof`, `brand_domain_unverified`, (online) `no_spf_record`.
 
 **Güven sınırı:** SPF/DKIM/DMARC sonucu **yalnızca en üstteki**
 `Authentication-Results` başlığından okunur — başlıklar yukarı eklendiği için
@@ -351,12 +368,47 @@ başlığı yokken gelen "pass" iddiası ise `auth_claim_unverifiable` üretir v
 **yumuşak sinyal indirimi verilmez**: o satırı damgalayan bir sunucu yok.
 `Received-SPF` kendi dilbilgisiyle (`Pass (...)`) okunur.
 
+**Hizalama:** `spf=pass` zarf domaininin, `dkim=pass` imzalayan domainin
+doğrulandığını söyler — From adresinin değil. Herkes kendi domaini için ikisini
+de geçirip From'a istediğini yazabilir. Bu yüzden en üst satırdaki `header.d`,
+`smtp.mailfrom` ve `header.from` From domainiyle (kayıtlı domain düzeyinde)
+karşılaştırılır. Tüm "pass"lar başka domain içinse `auth_pass_unaligned`
+raporlanır ve **güven indirimi verilmez**. Hangi domain için olduğunu söylemeyen
+yalın `spf=pass` şüpheden yararlanır.
+
+**Marka domaini taklidi:** From adresi `brands.txt`'deki bir markanın **gerçek**
+domainindeyse (`service@paypal.com`) ve alıcı sunucu o domain adına hizalı bir
+pass yazmamışsa `brand_domain_spoof` (sert) üretilir — From satırını herkes
+istediği gibi yazabilir. Dosyada hiç `Authentication-Results` yoksa yalnız
+`brand_domain_unverified` notu çıkar (yumuşak; `--online` ile kesinleştirin).
+Ücretsiz posta domainleri (gmail.com vb.) bu kontrolün dışındadır.
+
 **URL / bağlantı** — `anchor_href_mismatch`, `ip_url`, `punycode_domain`,
 `homograph_domain`, `at_in_url`, `url_shortener`, `suspicious_tld`,
-`excessive_subdomains`, `lookalike_domain`.
+`excessive_subdomains`, `lookalike_domain`, `tld_swap_domain` (yumuşak).
+
+Domain kontrolleri (lookalike, combosquat, subdomain'e gömülü marka, homoglyph,
+şüpheli TLD) yalnız linklere değil **gönderenin kendi domainine** (From ve
+Reply-To) de uygulanır: `noreply@paypa1.com` hiçbir link içermese de yakalanır.
+Aynı domain hem gönderen hem link ise tek bulgu sayılır. `tld_swap_domain` aynı
+adın başka uzantısını işaretler (`akbank.net`); ülke uzantıları (`amazon.co.uk`)
+ve 4 harften kısa adlar hariçtir. Markanın kendi yan domaini de olabileceği için
+yumuşaktır — sizin için kesinse `[soft_ids] remove = ["tld_swap_domain"]`.
+
+Link, tarayıcının izlediği **her yazımla** toplanır — yalnız `<a href="http…">`
+değil: `//host/yol`, başında boşluk olan href, `https:\\host`, `<area href>`,
+`<form action>`, `<button formaction>`, `javascript:` içine gömülü URL ve metne
+şemasız yazılmış adresler (`www.x.com`, `x.com/giris`). Çok parçalı mailde
+**tüm** `text/html` ve `text/plain` parçaları okunur (istemci sonuncuyu gösterir;
+yalnız ilkine bakmak, zararsız bir ilk parçanın arkasına saklanmaya izin verirdi).
+`ip_url` IP'nin gizlenmiş yazımlarını da tanır: ondalık (`http://3232235777/`),
+hex (`0xC0A80101`), sekizlik ve IPv6 — kanıt satırı gerçek adresi gösterir.
 
 **İçerik** — `urgency_language`, `credential_request`, `brand_impersonation`,
-`generic_greeting`.
+`generic_greeting`. `brand_impersonation` görünen adı **gözün okuduğu hâliyle**
+de karşılaştırır: Kiril/Yunan benzer harfler ("PаyPal"), sıfır-genişlik
+karakterler ve tam-genişlik/matematiksel harfler Latin'e katlanır
+(`util.skeleton`); böyle yazılmış ad kanıt satırında ayrıca belirtilir.
 
 **Ek** — `dangerous_attachment`, `double_extension`, `macro_document`,
 `archive_attachment`, `mime_extension_mismatch`.
@@ -367,16 +419,25 @@ Her gösterge ayrıca bir **MITRE ATT&CK tekniğiyle** etiketlidir (`detector/mi
 
 **HTML adli (Tier 2)** — `form_external_action`, `html_password_input`,
 `meta_refresh_redirect`, `hidden_iframe`, `base_tag_href`, `obfuscated_script`,
-`hidden_text`.
+`hidden_text`, `active_content_link` (`javascript:` / `vbscript:` / `data:` linki;
+`javascript:void(0)` gibi boş yer tutucular ve `data:image/…` sayılmaz).
 
 **Ek derin statik (Tier 2)** — `html_smuggling`, `macro_detected`,
-`macro_autoexec` (oletools), `pdf_active_content`, `pdf_launch_action`.
+`macro_autoexec` (oletools), `pdf_active_content`, `pdf_launch_action`,
+`pdf_embedded_file` (yumuşak). `macro_detected` için OLE dosyası olmak yetmez,
+içinde VBA projesi (`_VBA_PROJECT`) bulunmalı. PDF'te `/JS`/`/JavaScript`
+bulgudur; `/OpenAction` ve `/AA` tek başına raporlanmaz (sayfa/zoom ayarı da
+böyle yapılır), betiğin yanında kanıt satırına eklenir.
 
 **QR / quishing (Tier 2)** — `qr_code_url`, `qr_suspicious_url`
 (OpenCV veya pyzbar backend'i kuruluysa).
 
 **URL derin (Tier 2)** — `open_redirect`, `combosquat_domain`,
 `brand_in_subdomain`, `confusable_brand` (IDN homoglyph), `random_host` (DGA).
+`combosquat_domain` "marka + **tuzak kelime**" arar (`paypal-secure`,
+`garantibbva-destek`, `akbankgiris`); markanın kendi altyapısı (`googleapis`,
+`amazonaws`, `paypalobjects`) ve içinde marka geçen sıradan kelimeler
+(`pineapple`) tetiklemez. Kelimeler `lure_words.txt` içinde.
 
 ## Özelleştirme
 
@@ -386,6 +447,8 @@ Sözlükler `detector/data/` altında düz metin — kod değiştirmeden genişl
 - `detector/data/suspicious_tlds.txt` — satır başına bir TLD
 - `detector/data/urgency_keywords.txt` — satır başına bir kelime/ifade (TR + EN)
 - `detector/data/trusted_domains.txt` — güvenilen gönderen allowlist'i
+- `detector/data/lure_words.txt` — combosquat tuzak kelimeleri (login, secure,
+  destek, giris…); `--data-dir` klasöründe yoksa paket içindeki liste kullanılır
 
 Karşılaştırmalar **ASCII'ye katlanır** (`util.ascii_fold`): `str.lower()` "I"
 harfini "ı"ya çeviremediği için "VAKIFBANK" yazan bir mail "vakıfbank" satırıyla
@@ -460,7 +523,7 @@ seçenekler ve açıklamaları: [`config.example.toml`](config.example.toml).
 ## Testler
 
 ```bash
-python -m pytest -q      # 177 test
+python -m pytest -q      # 407 test
 ```
 
 Her push ve PR'da GitHub Actions bunları çalıştırır: **opsiyonel bağımlılık

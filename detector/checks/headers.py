@@ -10,6 +10,18 @@ from ..util import registered_domain, domain_of_address, looks_like_domain
 _DOMAIN_TOKEN = re.compile(r"(?:[\w-]+\.)+[a-z]{2,}")
 
 _MECHS = ("spf", "dkim", "dmarc")
+
+# Mailbox providers anyone can sign up to. A Reply-To pointing at one of these
+# from a corporate From is the BEC shape; a Reply-To pointing at a help-desk or
+# CRM domain is how half the internet's support mail works.
+FREEMAIL = frozenset({
+    "gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com",
+    "msn.com", "windowslive.com", "yahoo.com", "ymail.com", "aol.com",
+    "icloud.com", "me.com", "proton.me", "protonmail.com", "tutanota.com",
+    "tuta.io", "gmx.com", "gmx.net", "mail.com", "mail.ru", "yandex.com",
+    "yandex.ru", "yandex.com.tr", "hotmail.com.tr", "outlook.com.tr",
+    "yahoo.com.tr", "mynet.com",
+})
 _SPF_RESULTS = {"pass", "fail", "softfail", "neutral", "none", "temperror",
                 "permerror"}
 # How much trust a result buys. Used only to notice that a LOWER header claims
@@ -39,6 +51,90 @@ def _received_spf(email) -> str:
         m = re.match(r"\s*([A-Za-z]+)", str(line or ""))
         if m and m.group(1).lower() in _SPF_RESULTS:
             return m.group(1).lower()
+    return ""
+
+
+_AR_COMMENT = re.compile(r"\([^()]*\)")
+_AR_RESULT = re.compile(r"\b(spf|dkim|dmarc)\s*=\s*(\w+)", re.IGNORECASE)
+_AR_PROP = re.compile(
+    r"\b(header\.d|header\.i|header\.from|smtp\.mailfrom|smtp\.helo)\s*=\s*([^\s;]+)",
+    re.IGNORECASE)
+# Which property names the domain a mechanism actually vouched for.
+_AR_SUBJECT = {"dmarc": ("header.from",), "dkim": ("header.d", "header.i"),
+               "spf": ("smtp.mailfrom", "smtp.helo")}
+
+
+def _top_auth_results(email) -> str:
+    """The Authentication-Results line summary() reads, as written."""
+    for line in getattr(email, "auth_results", []) or []:
+        if _stated(line):
+            return str(line)
+    return ""
+
+
+def alignment(email):
+    """Whose domain did the passing results vouch for? -> (state, foreign).
+
+    "spf=pass" says the *envelope* domain authorised the sending server, and
+    "dkim=pass" that *some* domain signed the mail. Neither says anything about
+    the From address unless that domain is the From domain - anyone can pass SPF
+    and DKIM for a domain they registered this morning, with any From they like.
+
+    state is one of
+      "aligned"   - a pass names the From domain (or DMARC passed, which is this
+                    very test done by the receiver)
+      "unaligned" - every pass names some other domain; ``foreign`` lists them
+      "unknown"   - a pass that does not say which domain it was for
+      "nopass"    - the receiver stated results and none of them is a pass
+      "none"      - no Authentication-Results to read
+    Compared at registrable-domain level, as DMARC's relaxed alignment does.
+    """
+    line = _top_auth_results(email)
+    if not line:
+        return "none", []
+    while True:  # comments nest, and they may contain ";" and "="
+        stripped = _AR_COMMENT.sub(" ", line)
+        if stripped == line:
+            break
+        line = stripped
+    fdom = registered_domain(email.from_domain)
+    aligned = unknown = False
+    foreign = []
+    for clause in line.split(";"):
+        m = _AR_RESULT.search(clause)
+        if not m or m.group(2).lower() != "pass":
+            continue
+        mech = m.group(1).lower()
+        props = {k.lower(): v for k, v in _AR_PROP.findall(clause)}
+        claimed = next((props[k] for k in _AR_SUBJECT[mech] if k in props), "")
+        if not claimed:
+            # DMARC is defined on the From domain; a bare SPF/DKIM pass is not.
+            if mech == "dmarc":
+                aligned = True
+            else:
+                unknown = True
+            continue
+        dom = registered_domain(claimed.strip("\"'<>").rsplit("@", 1)[-1])
+        if dom and fdom and dom == fdom:
+            aligned = True
+        else:
+            # Includes "dmarc=pass header.from=other.com": the receiver judged a
+            # From this mail does not show - the two-From-headers trick.
+            foreign.append(mech + "=pass (" + (dom or "?") + ")")
+    if aligned:
+        return "aligned", foreign
+    if unknown:
+        return "unknown", foreign
+    if foreign:
+        return "unaligned", foreign
+    return "nopass", []
+
+
+def _brand_of(domain: str, brands: dict) -> str:
+    """The brand whose genuine domain this is, "" if it is nobody's."""
+    for brand, domains in (brands or {}).items():
+        if domain in domains:
+            return brand
     return ""
 
 
@@ -144,13 +240,59 @@ def run(email, online=False, ctx=None):
             "mailde normaldir, ancak gonderenin kendi yazdigi sahte satir da boyle gorunur."))
 
     fdom = registered_domain(email.from_domain)
+    from_mapi = getattr(email, "header_source", "rfc822") == "mapi"
+
+    state, foreign = alignment(email)
+    if state == "unaligned":
+        out.append(Indicator("auth_pass_unaligned", "auth", "low", 4,
+            "Basarili sonuclar From domaini (" + (fdom or "?") + ") icin degil: "
+            + ", ".join(foreign),
+            "SPF/DKIM baska bir domain adina gecmis. Bu, o domainin sahibinin "
+            "gonderdigini kanitlar - From adresinin gercek oldugunu degil. "
+            "Skorlamada dogrulanmis gonderen sayilmadi."))
+
+    # A From address ON a known brand's real domain. content.py skips these
+    # ("the sender genuinely is the brand") - which is only true if something
+    # proves it. Brands this size all publish DMARC, so the receiving server's
+    # verdict settles it; without one, say so instead of assuming either way.
+    brand = "" if fdom in FREEMAIL else _brand_of(fdom, (ctx or {}).get("brands"))
+    if brand and not from_mapi:
+        stated = "spf=" + a["spf"] + " dkim=" + a["dkim"] + " dmarc=" + a["dmarc"]
+        self_claimed = unverifiable_auth(email)
+        if state in ("unaligned", "nopass") or (state != "none" and self_claimed):
+            out.append(Indicator("brand_domain_spoof", "auth", "high", 18,
+                "From " + email.from_addr + " (" + brand + " domaini) ama hizali "
+                "dogrulama yok: " + stated
+                + (" - 'pass' satirini damgalayan sunucu yok" if self_claimed else ""),
+                "Mail " + brand + " markasinin gercek domaininden geldigini soyluyor, "
+                "fakat alici sunucu o domain adina gecen bir SPF/DKIM/DMARC sonucu "
+                "yazmamis. Gercek " + brand + " maili bu kontrolden gecer; From "
+                "satirini herkes istedigi gibi yazabilir."))
+        elif state == "none":
+            out.append(Indicator("brand_domain_unverified", "auth", "low", 8,
+                "From " + email.from_addr + " (" + brand + " domaini) - bu dosyada "
+                "Authentication-Results yok",
+                "Gonderen adresi " + brand + " domaininde ama mailde alici sunucunun "
+                "dogrulama sonucu bulunmuyor: gercek de olabilir, taklit de. "
+                "Kesinlestirmek icin --online ile canli SPF/DKIM dogrulamasi yapin."))
 
     if email.reply_to:
         rdom = registered_domain(domain_of_address(email.reply_to))
         if fdom and rdom and rdom != fdom:
-            out.append(Indicator("from_replyto_mismatch", "auth", "medium", 10,
+            # A sender proven to own its From domain (DMARC pass) that points
+            # replies at another *organisation's* domain is a ticketing system or
+            # a CRM. Still reported - at a weight that cannot carry a verdict by
+            # itself. Unauthenticated, or replies going to a free mailbox, stays
+            # at full weight: that is what redirecting the answer looks like.
+            authed = (ctx or {}).get("auth_level") == "pass"
+            routine = authed and rdom not in FREEMAIL
+            out.append(Indicator("from_replyto_mismatch", "auth",
+                "low" if routine else "medium", 5 if routine else 10,
                 "From=" + email.from_addr + "  Reply-To=" + email.reply_to,
-                "Yanit farkli bir domaine gidiyor - cevaplari saldirgana yonlendirme taktigi."))
+                "Yanit farkli bir domaine gidiyor - cevaplari saldirgana yonlendirme taktigi."
+                + (" Gonderen dogrulanmis (DMARC pass) ve hedef ucretsiz posta "
+                   "kutusu degil; destek/CRM sistemlerinde olagan - dusuk agirlik."
+                   if routine else "")))
 
     if email.return_path:
         pdom = registered_domain(domain_of_address(email.return_path))

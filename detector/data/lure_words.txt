@@ -1,0 +1,151 @@
+# Tuzak kelimeler — satir basina bir kelime, kucuk harf.
+#
+# Combosquat tespiti (detector/checks/url_deep.py) bu listeyi kullanir: bir
+# domain etiketi "marka + bu kelimeler"den olusuyorsa (paypal-secure,
+# garantibbva-destek, akbankgiris, secure-login-paypal) ve markanin gercek
+# domaini degilse `combosquat_domain` ateslenir. Etiketin markadan geri kalan
+# HER parcasi bu kelimelerden kurulabilmeli; rakamlar yok sayilir (secure24).
+#
+# Neden liste: "marka + herhangi bir ek" kurali markalarin kendi altyapisini
+# (googleapis, amazonaws, paypalobjects, githubusercontent) ve icinde marka
+# gecen siradan kelimeleri (pineapple, zoominfo) da vuruyordu.
+#
+# Ne eklenir: bir GIRIS / HESAP / DESTEK sayfasini cagristiran kelimeler.
+# Ne eklenmez: urun ve altyapi kelimeleri (pay, mail, store, app, cloud, cdn,
+# api, media, static, shop, music) — markalar bunlarla gercek domain kurar
+# (googlemail, amazonpay, microsoftstore) ve hepsi yanlis alarm olur.
+# Karsilastirma ASCII'ye katlanir: "sifre" yazmak "şifre" ile aynidir.
+
+# --- giris / kimlik (EN) ---
+login
+logon
+signin
+signon
+auth
+authentication
+password
+reset
+unlock
+recover
+recovery
+restore
+access
+session
+id
+
+# --- dogrulama / guvenlik (EN) ---
+secure
+secured
+security
+verify
+verification
+validate
+validation
+confirm
+confirmation
+protect
+protection
+safe
+safety
+alert
+alerts
+notice
+notification
+locked
+limited
+suspended
+
+# --- hesap / destek (EN) ---
+account
+accounts
+update
+support
+help
+helpdesk
+service
+services
+customer
+client
+portal
+online
+official
+center
+centre
+resolution
+webmail
+
+# --- para (EN) ---
+billing
+payment
+payments
+invoice
+refund
+wallet
+bank
+banking
+claim
+bonus
+gift
+reward
+prize
+promo
+
+# --- teslimat (EN) ---
+delivery
+tracking
+track
+parcel
+package
+shipment
+
+# --- giris / kimlik (TR) ---
+giris
+girisi
+girisyap
+sifre
+kimlik
+aktivasyon
+
+# --- dogrulama / guvenlik (TR) ---
+guvenlik
+guvenli
+dogrulama
+dogrula
+onay
+onayla
+bildirim
+uyari
+
+# --- hesap / destek (TR) ---
+hesap
+hesabim
+destek
+yardim
+musteri
+hizmet
+hizmetleri
+sube
+subesi
+internet
+bireysel
+kurumsal
+islem
+islemleri
+guncelleme
+guncelle
+resmi
+basvuru
+
+# --- para / odul (TR) ---
+odeme
+iade
+borc
+fatura
+kampanya
+hediye
+odul
+cekilis
+
+# --- teslimat (TR) ---
+takip
+teslimat

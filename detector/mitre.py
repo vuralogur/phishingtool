@@ -29,6 +29,7 @@ _BASE = "https://attack.mitre.org/techniques/"
 NAMES = {
     "T1027": "Obfuscated Files or Information",
     "T1027.006": "Obfuscated Files or Information: HTML Smuggling",
+    "T1027.009": "Obfuscated Files or Information: Embedded Payloads",
     "T1036": "Masquerading",
     "T1036.007": "Masquerading: Double File Extension",
     "T1036.008": "Masquerading: Masquerade File Type",
@@ -59,6 +60,7 @@ TECHNIQUES = {
     "from_returnpath_mismatch": "T1656",
     "display_name_spoof": "T1656",
     "brand_impersonation": "T1656",
+    "brand_domain_spoof": "T1656",
 
     # Attacker-registered domains: typosquats, homoglyphs, throwaway hosts.
     # ATT&CK lists exactly this tradecraft under Acquire Infrastructure: Domains.
@@ -71,6 +73,7 @@ TECHNIQUES = {
     "suspicious_tld": "T1583.001",
     "excessive_subdomains": "T1583.001",
     "random_host": "T1583.001",
+    "tld_swap_domain": "T1583.001",
 
     # The link itself is the delivery vehicle (QR = the same link, hidden in
     # an image so text-layer filters never see it).
@@ -90,6 +93,9 @@ TECHNIQUES = {
     "obfuscated_script": "T1027",
     "hidden_text": "T1027",
     "hidden_iframe": "T1027",
+    # A javascript:/data: href carries its destination as code or as an embedded
+    # page, so no URL filter ever sees where the click leads.
+    "active_content_link": "T1027",
 
     # Credential harvesting: a login form inside the mail, posting outward.
     "form_external_action": "T1056.003",
@@ -115,6 +121,8 @@ TECHNIQUES = {
     "macro_autoexec": "T1059.005",
     "pdf_launch_action": "T1204.002",
     "pdf_active_content": "T1204.002",
+    # A file carried inside the PDF, with nothing in the PDF that runs it.
+    "pdf_embedded_file": "T1027.009",
 }
 
 # Deliberately unmapped: a reputation verdict and hygiene/forensic observations
@@ -134,6 +142,11 @@ NO_TECHNIQUE = frozenset({
     # "The header says pass and nothing backs it up" is a statement about what
     # this file can prove, not about a technique the adversary used.
     "auth_claim_unverifiable",
+    # Passing results that vouch for another domain: an observation about what
+    # the headers prove (an ESP's default signature looks exactly the same).
+    "auth_pass_unaligned",
+    # A brand's real domain in From with no verdict in the file either way.
+    "brand_domain_unverified",
 })
 
 

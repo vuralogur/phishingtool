@@ -70,6 +70,11 @@ def build_context(data_dir=None, config=None) -> dict:
         "suspicious_tlds": _load_set(d / "suspicious_tlds.txt"),
         "urgency": sorted(_load_set(d / "urgency_keywords.txt")),
         "allowlist": _load_set(d / "trusted_domains.txt"),
+        # Newer than the other dictionaries: a --data-dir folder made before it
+        # existed has no such file, and an empty set would silently switch
+        # combosquat detection off - so that case falls back to the bundled list.
+        "lure_words": (_load_set(d / "lure_words.txt")
+                       or _load_set(_DATA / "lure_words.txt")),
         "config": _config.resolve(config),
     }
 
@@ -86,6 +91,11 @@ def analyze(email, online=False, ctx=None):
         # A "pass" that no server stamped is the sender's own claim. The report
         # still shows what the header says (and headers.py raises an indicator
         # about it), but the score must not hand out the trust discount for it.
+        level = "none"
+    if level in ("pass", "partial") and headers.alignment(email)[0] == "unaligned":
+        # Every passing result vouches for some other domain (the attacker's own
+        # mail server passes SPF and DKIM for the attacker's own domain). That
+        # authenticates them, not the From address, so it buys no trust either.
         level = "none"
     from_rdom = registered_domain(email.from_domain)
     ctx = {**ctx, "from_rdom": from_rdom, "auth_level": level}

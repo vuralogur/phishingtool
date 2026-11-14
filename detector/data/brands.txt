@@ -42,7 +42,7 @@ dropbox,dropbox.com
 docusign,docusign.com;docusign.net
 adobe,adobe.com
 wetransfer,wetransfer.com
-zoom,zoom.us
+zoom,zoom.us;zoom.com
 slack,slack.com
 github,github.com
 oracle,oracle.com

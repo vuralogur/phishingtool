@@ -4,8 +4,8 @@ import re
 from urllib.parse import urlparse
 
 from ..indicators import Indicator
-from ..util import (has_non_ascii, is_ip, looks_like_domain,
-                    lookalike_distance, registered_domain)
+from ..util import (canonical_ip, domain_of_address, has_non_ascii,
+                    looks_like_domain, lookalike_distance, registered_domain)
 
 SHORTENERS = {
     "bit.ly", "tinyurl.com", "goo.gl", "t.co", "ow.ly", "is.gd", "buff.ly",
@@ -33,6 +33,22 @@ def _authority(href):
     return rest.split("/", 1)[0]
 
 
+def _tld_swap(rdom: str, legit: str, sus_tlds) -> bool:
+    """Same name, different ending: akbank.net for akbank.com.
+
+    Two limits keep it honest. A country ending is skipped unless it is on the
+    suspicious list - amazon.co.uk and google.com.tr are how multinationals
+    name their regional sites, not squats. And the name needs four letters:
+    "x", "fb" and "ups" exist under every TLD for unrelated reasons.
+    """
+    name, _, ending = rdom.partition(".")
+    legit_name, _, legit_ending = legit.partition(".")
+    if name != legit_name or not ending or ending == legit_ending or len(name) < 4:
+        return False
+    last = ending.rsplit(".", 1)[-1]
+    return len(last) >= 3 or last in sus_tlds
+
+
 def run(email, online=False, ctx=None):
     ctx = ctx or {}
     brands = ctx.get("brands", {})
@@ -44,6 +60,39 @@ def run(email, online=False, ctx=None):
         if ind.id not in seen:
             out.append(ind)
             seen.add(ind.id)
+
+    def domain_checks(host, rdom, where=""):
+        """What the domain itself gives away - asked of links and of the sender."""
+        if "xn--" in host:
+            add(Indicator("punycode_domain", "url", "medium", 12,
+                where + "Punycode/IDN domain: " + host,
+                "Punycode ile taninmis marka taklidi (homograph) yapilabilir."))
+        elif has_non_ascii(host):
+            add(Indicator("homograph_domain", "url", "high", 18,
+                where + "Domainde ASCII olmayan karakter: " + host,
+                "Latin disi benzer karakterlerle marka taklidi."))
+        tld = rdom.rsplit(".", 1)[-1] if "." in rdom else ""
+        if tld and tld in sus_tlds:
+            add(Indicator("suspicious_tld", "url", "medium", 8,
+                where + "Supheli TLD: ." + tld + " (" + host + ")",
+                "Ucretsiz/kotuye kullanilan TLD'ler phishing'de sik gorulur."))
+
+        # Look-alike of a known brand (edit distance 1-2, not the real domain).
+        for brand, domains in brands.items():
+            if rdom in domains:
+                continue
+            for legit in domains:
+                d = lookalike_distance(rdom, legit)
+                if d:
+                    add(Indicator("lookalike_domain", "url", "high", 16,
+                        where + host + " ~ " + legit + " (fark " + str(d) + ")",
+                        "'" + legit + "' markasina cok benzeyen sahte domain."))
+                if _tld_swap(rdom, legit, sus_tlds):
+                    add(Indicator("tld_swap_domain", "url", "medium", 10,
+                        where + rdom + " - '" + legit + "' ile ayni ad, farkli uzanti",
+                        "Marka adi ayni, uzanti farkli. Markanin kendi yan domaini de "
+                        "olabilir (oyleyse brands.txt'ye ekleyin); ayni ad baska "
+                        "uzantida kaydedilerek taklit de boyle yapilir."))
 
     for link in email.links:
         host = _host(link.href)
@@ -72,18 +121,17 @@ def run(email, online=False, ctx=None):
                         "metin '" + m.group(0) + "' -> gercek hedef " + host,
                         "Gorunen link ile tiklaninca gidilen adres farkli - klasik phishing."))
 
-        if is_ip(host):
+        ip = canonical_ip(host)
+        if ip:
+            # 3232235777 and 0xC0A80101 are the same address as 192.168.1.1 to a
+            # browser. Show what it resolves to - the odd spelling is the point.
+            disguised = ip != host
             add(Indicator("ip_url", "url", "high", 14,
-                "Baglanti dogrudan IP adresi: " + host,
-                "Mesru kurumlar linklerde ciplak IP kullanmaz."))
-        if "xn--" in host:
-            add(Indicator("punycode_domain", "url", "medium", 12,
-                "Punycode/IDN domain: " + host,
-                "Punycode ile taninmis marka taklidi (homograph) yapilabilir."))
-        elif has_non_ascii(host):
-            add(Indicator("homograph_domain", "url", "high", 18,
-                "Domainde ASCII olmayan karakter: " + host,
-                "Latin disi benzer karakterlerle marka taklidi."))
+                "Baglanti dogrudan IP adresi: " + host
+                + (" (= " + ip + ")" if disguised else ""),
+                "Mesru kurumlar linklerde ciplak IP kullanmaz."
+                + (" Adres ondalik/hex/sekizlik yazilarak IP oldugu gizlenmis."
+                   if disguised else "")))
         if "@" in _authority(link.href):
             add(Indicator("at_in_url", "url", "medium", 10,
                 "URL yetki kisminda '@': " + link.href,
@@ -92,22 +140,20 @@ def run(email, online=False, ctx=None):
             add(Indicator("url_shortener", "url", "medium", 8,
                 "URL kisaltici: " + rdom,
                 "Kisaltici gercek hedefi gizler."))
-        tld = rdom.rsplit(".", 1)[-1] if "." in rdom else ""
-        if tld and tld in sus_tlds:
-            add(Indicator("suspicious_tld", "url", "medium", 8,
-                "Supheli TLD: ." + tld + " (" + host + ")",
-                "Ucretsiz/kotuye kullanilan TLD'ler phishing'de sik gorulur."))
         if host.count(".") >= 4:
             add(Indicator("excessive_subdomains", "url", "low", 6,
                 "Asiri subdomain: " + host,
                 "Marka adini subdomain'e gomerek mesru gosterme taktigi."))
 
-        # Look-alike of a known brand (edit distance 1-2, not the real domain).
-        for brand, domains in brands.items():
-            for legit in domains:
-                d = lookalike_distance(rdom, legit)
-                if d and rdom not in domains:
-                    add(Indicator("lookalike_domain", "url", "high", 16,
-                        host + " ~ " + legit + " (fark " + str(d) + ")",
-                        "'" + legit + "' markasina cok benzeyen sahte domain."))
+        if not ip:
+            domain_checks(host, rdom)
+
+    # The sender's own domain is asked the same questions. A typosquat used only
+    # as the From address (noreply@paypa1.com, no link to it) never met a URL
+    # check. After the links and through the same add(): one domain, one finding.
+    for label, addr in (("Gonderen (From) domaini - ", getattr(email, "from_addr", "")),
+                        ("Reply-To domaini - ", getattr(email, "reply_to", ""))):
+        host = domain_of_address(addr or "")
+        if host and not canonical_ip(host):
+            domain_checks(host, registered_domain(host), where=label)
     return out

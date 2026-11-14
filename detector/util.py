@@ -1,6 +1,8 @@
 """Shared helpers: domain parsing, IP detection, edit distance."""
 from __future__ import annotations
+import ipaddress
 import re
+import unicodedata
 
 # tldextract gives correct registrable-domain handling (e.g. co.uk domains).
 # Configure it to NEVER fetch the public-suffix list over the network — it
@@ -12,7 +14,16 @@ try:  # pragma: no cover - import guard
 except Exception:  # pragma: no cover
     _extract = None
 
-_IP_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
+# One part of a dotted IPv4 host as a browser reads it (WHATWG URL, "IPv4 number
+# parser"): 0x.. is hex, a leading 0 is octal, anything else is decimal.
+_HEX_PART = re.compile(r"0x([0-9a-f]*)")
+_OCT_PART = re.compile(r"0[0-7]+")
+_DEC_PART = re.compile(r"[0-9]+")
+
+# Characters a browser throws away before it parses a URL attribute: leading and
+# trailing C0 controls / spaces, and tabs or newlines anywhere inside.
+_C0_AND_SPACE = "".join(chr(c) for c in range(0x21))
+_TAB_OR_NEWLINE = re.compile(r"[\t\r\n]")
 
 # Public suffixes used by looks_like_domain() when tldextract is unavailable.
 # Not a substitute for the PSL — just enough to tell "paypal.com" from "Ltd.Sti".
@@ -37,8 +48,98 @@ _FOLD = str.maketrans({
 })
 
 
+def strip_url_noise(value: str) -> str:
+    """A URL attribute with the padding a browser ignores removed.
+
+    ``href=" https://x"`` and ``href="ht\\ntps://x"`` both open https://x, so a
+    check that compares the raw attribute against "https://" sees no link where
+    the reader sees one.
+    """
+    return _TAB_OR_NEWLINE.sub("", value or "").strip(_C0_AND_SPACE)
+
+
+def _ipv4_part(part: str):
+    """One dotted part -> its number, or None when it is not a number at all."""
+    m = _HEX_PART.fullmatch(part)
+    if m:
+        return int(m.group(1) or "0", 16)
+    if len(part) > 1 and part[0] == "0":
+        # A leading zero commits the part to octal: "08" is an error, not 8.
+        return int(part, 8) if _OCT_PART.fullmatch(part) else None
+    if _DEC_PART.fullmatch(part):
+        return int(part)
+    return None
+
+
+def canonical_ip(host: str) -> str:
+    """The address a URL host really is, in plain notation; "" if it is a name.
+
+    A browser accepts far more than "192.168.1.1" as an IPv4 host: one decimal
+    number (3232235777), hex (0xC0A80101), octal (0300.0250.01.01), fewer than
+    four parts (192.168.257) and any mix of those. All of them open the same
+    address, and all of them slipped past a dotted-quad regex - which is exactly
+    why they are used. IPv6 literals ("[2001:db8::1]") are recognised too.
+    """
+    host = (host or "").strip().lower().rstrip(".")
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
+    if not host:
+        return ""
+    if ":" in host:
+        try:
+            return str(ipaddress.ip_address(host.split("%", 1)[0]))
+        except ValueError:
+            return ""
+    parts = host.split(".")
+    if len(parts) > 4:
+        return ""
+    numbers = [_ipv4_part(p) for p in parts]
+    if any(n is None for n in numbers):
+        return ""
+    *head, last = numbers
+    # Every part but the last is one byte; the last one fills whatever is left.
+    if any(n > 255 for n in head) or last >= 256 ** (4 - len(head)):
+        return ""
+    value = last
+    for position, n in enumerate(head):
+        value += n << (8 * (3 - position))
+    return str(ipaddress.IPv4Address(value))
+
+
+# Letters from other scripts that render like Latin ones (Cyrillic / Greek /
+# Roman-numeral forms). Lowercase only: skeleton() lowercases before it looks.
+CONFUSABLES = {
+    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "у": "y", "х": "x",
+    "ѕ": "s", "і": "i", "ј": "j", "ԁ": "d", "һ": "h", "к": "k", "м": "m",
+    "т": "t", "в": "b", "н": "h", "г": "r", "ѐ": "e", "ӏ": "l",
+    "ο": "o", "α": "a", "ρ": "p", "ε": "e", "ι": "i", "κ": "k", "ν": "v",
+    "τ": "t", "υ": "u", "χ": "x", "ϲ": "c", "β": "b",
+    "ⅰ": "i", "ⅼ": "l", "ｏ": "o", "ａ": "a", "ｅ": "e",
+}
+
+# Characters that take up no space on screen: zero-width spaces and joiners,
+# direction marks and overrides, the soft hyphen, the BOM.
+_INVISIBLE = re.compile(
+    "[­͏؜᠎​-‏‪-‮⁠-⁤"
+    "⁦-⁯﻿]")
+
+
+def skeleton(s: str) -> str:
+    """What a string LOOKS like, as lowercase ASCII - for comparison only.
+
+    "PаyPal" with a Cyrillic "а", "Pay\\u200bPal" with a zero-width space and
+    "𝐏𝐚𝐲𝐏𝐚𝐥" in mathematical bold all read "PayPal" to a person and all three
+    fail a plain string comparison - which is why they are written that way.
+    This folds compatibility forms (NFKC), drops invisible characters and maps
+    look-alike letters, so the comparison sees what the eye sees.
+    """
+    s = _INVISIBLE.sub("", unicodedata.normalize("NFKC", s or ""))
+    return "".join(CONFUSABLES.get(c, c) for c in ascii_fold(s))
+
+
 def is_ip(host: str) -> bool:
-    return bool(_IP_RE.match((host or "").strip()))
+    """True for any host a browser would treat as an address (see canonical_ip)."""
+    return bool(canonical_ip(host))
 
 
 def ascii_fold(s: str) -> str:

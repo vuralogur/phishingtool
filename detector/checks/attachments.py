@@ -14,14 +14,22 @@ ARCHIVE = {"zip", "rar", "7z", "iso", "img"}
 # double extension (e.g. invoice.pdf.exe).
 BENIGN_LOOKING = {"pdf", "doc", "docx", "xls", "xlsx", "jpg", "jpeg", "png", "txt"}
 
+# Every MIME type real mail clients use for the extension - not just the
+# registered one. Windows labels a zip "application/x-zip-compressed", and plenty
+# of senders say "image/jpg"; reporting those buried the real mismatches.
+_JPEG = {"image/jpeg", "image/jpg", "image/pjpeg"}
 MIME_EXPECT = {
-    "pdf": "application/pdf",
-    "png": "image/png",
-    "jpg": "image/jpeg",
-    "jpeg": "image/jpeg",
-    "zip": "application/zip",
-    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "pdf": {"application/pdf", "application/x-pdf"},
+    "png": {"image/png", "image/x-png"},
+    "jpg": _JPEG,
+    "jpeg": _JPEG,
+    "zip": {"application/zip", "application/x-zip-compressed", "application/x-zip"},
+    "docx": {"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+             "application/msword"},
 }
+# "Some bytes" - the type a client falls back to when it does not know better.
+# It claims nothing about the file, so it cannot contradict the extension.
+MIME_GENERIC = {"application/octet-stream", "binary/octet-stream"}
 
 
 def run(email, online=False, ctx=None):
@@ -50,7 +58,8 @@ def run(email, online=False, ctx=None):
                 "Arşivler tarayıcılardan zararlı içerik gizlemekte kullanılır."))
 
         exp = MIME_EXPECT.get(ext)
-        if exp and att.content_type and att.content_type.lower() != exp:
+        declared = (att.content_type or "").lower()
+        if exp and declared and declared not in exp and declared not in MIME_GENERIC:
             out.append(Indicator("mime_extension_mismatch", "attachment", "medium", 10,
                 att.filename + ": uzantı ." + ext + " ama MIME " + att.content_type,
                 "Uzantı ile gerçek dosya türü uyuşmuyor — gizleme taktiği."))
