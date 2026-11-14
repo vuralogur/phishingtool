@@ -47,7 +47,7 @@ python -m detector.cli bench corpus/ [--threshold high] [--json]
 # GUI
 python run_gui.py
 # testler
-python -m pytest -q      # 448 test (CI: 3.11–3.14 Linux + 3.12 Windows)
+python -m pytest -q      # 574 test (CI: 3.11–3.14 Linux + 3.12 Windows)
 ```
 
 ## Mimari
@@ -65,6 +65,16 @@ python -m pytest -q      # 448 test (CI: 3.11–3.14 Linux + 3.12 Windows)
   `formaction`, kapatılmamış `<a>`, `javascript:` içindeki URL, ve şemasız metin
   adresleri (`_text_urls`: `www.` veya yol + gerçek public suffix şart). HTML'de
   yalnız anchor **dışı** görünür metin taranır — anchor metni hedef değildir.
+  `attachments`: dosya adı ya da `attachment` disposition'ı olan parçalar **ve**
+  `_carries_a_file()` — adsız `image/*`/`application/*`/`audio/*`/`video/*`
+  parçaları (yalnız Content-ID'li gömülü resim, "noname" ikili; adı `(unnamed)`),
+  imza parçaları (`_SIGNATURE_TYPES`) hariç. Multipart olmayan mailin kendisi de
+  dosya olabilir. `Attachment.clean_name` = OS'un göreceği ad (sondaki nokta/
+  boşluk ve görünmez karakterler atılır); `ext` ondan türetilir.
+- `detector/filetype.py` — `sniff(data) -> kind` (`exe|ole|zip|image|archive|
+  rtf|pdf|html|svg|""`) + `LABELS`. Yalnız ilk baytların imza karşılaştırması;
+  açma/çözme yok. Tanınmayan = `""` = "bulgu yok" (tahmin etmez; "MZ" tek
+  başına PE değildir, `e_lfanew`→`PE\0\0` ya da DOS stub metni aranır).
 - `detector/msg.py` — Outlook `.msg` okuyucu, **saf stdlib** (bağımlılık yok):
   MS-CFB kapsayıcı (FAT/mini-FAT/directory) + MAPI özellikleri → `EmailMessage`.
   `is_msg()`, `to_message() -> (msg, header_source)`, `MsgError`. Transport
@@ -150,8 +160,8 @@ python -m pytest -q      # 448 test (CI: 3.11–3.14 Linux + 3.12 Windows)
 | `checks/url_deep.py` | **Tier 2**: `open_redirect`, `combosquat_domain`, `brand_in_subdomain`, `confusable_brand` (IDN), `random_host` (DGA) | first-party farkında |
 | `checks/content.py` | `urgency_language`, `credential_request`, `generic_greeting`, `brand_impersonation` | brand_imp **kimlik-temelli** (aşağıda) |
 | `checks/html_forensics.py` | **Tier 2**: harici form POST (`formaction` dahil), parola alanı, meta-refresh, `<base>`, gizli iframe, gizli metin, obfuscated JS, `active_content_link` (`javascript:`/`vbscript:`/`data:` href; `void(0)` ve `data:image` hariç) | stdlib |
-| `checks/attachments.py` | `double_extension`, `dangerous_attachment`, `macro_document`, arşiv, MIME uyuşmazlığı | ada göre |
-| `checks/attachment_deep.py` | **Tier 2**: `html_smuggling`, `macro_detected/autoexec`, `pdf_active_content`, `pdf_launch_action` | içeriğe göre; oletools opsiyonel |
+| `checks/attachments.py` | `double_extension`, `dangerous_attachment`, `macro_document`, arşiv, MIME uyuşmazlığı, `disguised_executable` (sert: içerik exe, ad değil), `content_extension_mismatch` (yumuşak, `CONTENT_EXPECT`) | ad + MIME + içerik imzası (`filetype.sniff`); bayt/MIME aynı eki yalanlıyorsa **tek** bulgu |
+| `checks/attachment_deep.py` | **Tier 2**: `html_smuggling`, `macro_detected/autoexec`, `pdf_active_content`, `pdf_launch_action`, HTML/SVG ek = sayfa (`_page`): `html_attachment_form` (sert 16) **ya da** `html_attachment_script` (sert 14) | içeriğe göre; oletools opsiyonel. Sayfa okuması `html_forensics.scan()` ile; dosya başına **tek** bulgu (form kazanır) — meşru "güvenli mesaj" HTML ekleri critical'a çıkmasın |
 | `checks/qr.py` | **Tier 2** quishing: resim/`data:` içindeki QR çözüp URL denetler | opencv veya pyzbar opsiyonel; yoksa sessiz atlar |
 | `reputation.py` | `vt_flagged` (VirusTotal) | online + `VT_API_KEY` |
 

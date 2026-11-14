@@ -114,6 +114,8 @@ TECHNIQUES = {
     # The attachment lies about what it is.
     "double_extension": "T1036.007",
     "mime_extension_mismatch": "T1036.008",
+    "content_extension_mismatch": "T1036.008",
+    "disguised_executable": "T1036.008",
 
     # Confirmed active content inside the attachment.
     "html_smuggling": "T1027.006",
@@ -121,6 +123,10 @@ TECHNIQUES = {
     "macro_autoexec": "T1059.005",
     "pdf_launch_action": "T1204.002",
     "pdf_active_content": "T1204.002",
+    # A page delivered as a file: its login form, or the script that sends the
+    # reader on, runs from the local disk where no URL filter sits in between.
+    "html_attachment_form": "T1056.003",
+    "html_attachment_script": "T1204.002",
     # A file carried inside the PDF, with nothing in the PDF that runs it.
     "pdf_embedded_file": "T1027.009",
 }

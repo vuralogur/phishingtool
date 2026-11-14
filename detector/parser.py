@@ -9,7 +9,8 @@ from pathlib import Path
 import re
 
 from . import msg as _msg
-from .util import domain_of_address, looks_like_domain, strip_url_noise
+from .util import (domain_of_address, looks_like_domain, strip_invisible,
+                   strip_url_noise)
 
 _URL_RE = re.compile(r"""https?://[^\s"'<>)\]]+""", re.IGNORECASE)
 # A URL typed without a scheme ("www.x.com", "x.com/login"). Mail clients turn
@@ -46,9 +47,19 @@ class Attachment:
     payload: bytes = b""  # decoded content, kept for deep static analysis
 
     @property
+    def clean_name(self) -> str:
+        """The name as the operating system will treat it.
+
+        Windows drops trailing dots and spaces - "fatura.exe." is saved and run
+        as fatura.exe - and zero-width or direction-override characters are
+        invisible to the reader but would otherwise sit inside the "extension".
+        """
+        return strip_invisible(self.filename or "").rstrip(". \t")
+
+    @property
     def ext(self) -> str:
-        name = self.filename or ""
-        return name.rsplit(".", 1)[-1].lower() if "." in name else ""
+        name = self.clean_name
+        return name.rsplit(".", 1)[-1].strip().lower() if "." in name else ""
 
 
 @dataclass
@@ -267,15 +278,37 @@ def _bodies(msg):
     return "\n".join(texts), "\n".join(htmls)
 
 
+# Detached signatures travel as nameless application/* parts; they are the
+# mail's own plumbing, not something it delivers.
+_SIGNATURE_TYPES = {
+    "application/pgp-signature", "application/pgp-encrypted",
+    "application/pkcs7-signature", "application/x-pkcs7-signature",
+}
+_CARRIER_MAINTYPES = {"image", "application", "audio", "video"}
+
+
+def _carries_a_file(part) -> bool:
+    """A part that is a file even though nothing names it or calls it one.
+
+    "Has a filename or says attachment" let two things through unseen: an
+    inline image referenced only by Content-ID (where a QR code hides), and a
+    bare application/* part, which clients still offer to the reader as
+    "noname" / "ATT00001.bin". Text parts are bodies, not files.
+    """
+    return (part.get_content_maintype() in _CARRIER_MAINTYPES
+            and part.get_content_type() not in _SIGNATURE_TYPES)
+
+
 def _attachments(msg):
     out = []
-    if not msg.is_multipart():
-        return out
+    # walk() yields the message itself when it is not multipart, so a mail whose
+    # whole body IS the file (Content-Type: application/zip) is covered too.
     for part in msg.walk():
         if part.is_multipart():
             continue
         filename = part.get_filename()
-        if (part.get_content_disposition() or "") == "attachment" or filename:
+        if ((part.get_content_disposition() or "") == "attachment" or filename
+                or _carries_a_file(part)):
             payload = part.get_payload(decode=True) or b""
             out.append(Attachment(
                 filename=filename or "(unnamed)",

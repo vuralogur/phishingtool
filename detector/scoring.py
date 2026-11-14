@@ -47,6 +47,10 @@ SOFT_IDS = {
     # attachment "capability" (not confirmed malicious)
     "archive_attachment", "macro_document", "mime_extension_mismatch",
     "pdf_embedded_file",
+    # Bytes that disagree with the extension without being an executable: a
+    # renamed archive or a page saved under the wrong name is sloppy far more
+    # often than hostile. (An executable behind a document name is hard.)
+    "content_extension_mismatch",
     # html quirks marketing HTML also produces
     "meta_refresh_redirect", "base_tag_href", "hidden_iframe", "hidden_text",
     "obfuscated_script",
@@ -102,7 +106,8 @@ THRESHOLDS = {
 STACK_IDS = frozenset({
     "url_shortener", "suspicious_tld", "punycode_domain", "at_in_url",
     "tld_swap_domain",
-    "macro_document", "mime_extension_mismatch", "qr_code_url",
+    "macro_document", "mime_extension_mismatch", "content_extension_mismatch",
+    "qr_code_url",
     "meta_refresh_redirect", "base_tag_href", "hidden_iframe",
     "obfuscated_script",
 })

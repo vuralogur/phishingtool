@@ -124,6 +124,11 @@ _INVISIBLE = re.compile(
     "⁦-⁯﻿]")
 
 
+def strip_invisible(s: str) -> str:
+    """Drop characters that take up no space on screen (see ``_INVISIBLE``)."""
+    return _INVISIBLE.sub("", s or "")
+
+
 def skeleton(s: str) -> str:
     """What a string LOOKS like, as lowercase ASCII - for comparison only.
 

@@ -341,7 +341,8 @@ Aşağıdaki **taşıyıcı** sinyaller farklıdır — mailin nereye götürdü
 taşıdığını anlatır ve sıradan posta altyapısı bunları üretmez:
 
 `url_shortener`, `suspicious_tld`, `punycode_domain`, `at_in_url`,
-`tld_swap_domain`, `macro_document`, `mime_extension_mismatch`, `qr_code_url`,
+`tld_swap_domain`, `macro_document`, `mime_extension_mismatch`,
+`content_extension_mismatch`, `qr_code_url`,
 `meta_refresh_redirect`, `base_tag_href`, `hidden_iframe`, `obfuscated_script`
 
 Kural: gönderen **DMARC pass değilse** ve en az **2 farklı** taşıyıcı sinyal
@@ -440,7 +441,25 @@ karakterler ve tam-genişlik/matematiksel harfler Latin'e katlanır
 (`util.skeleton`); böyle yazılmış ad kanıt satırında ayrıca belirtilir.
 
 **Ek** — `dangerous_attachment`, `double_extension`, `macro_document`,
-`archive_attachment`, `mime_extension_mismatch`.
+`archive_attachment`, `mime_extension_mismatch`, `disguised_executable`,
+`content_extension_mismatch` (yumuşak).
+
+- **İçerik imzası.** Dosya adını da MIME tipini de gönderen yazar; ilk baytları
+  yazamaz. `disguised_executable` (sert): içerik PE/ELF/Mach-O/LNK ama ad
+  çalıştırılabilir uzantı taşımıyor (`fatura.pdf`, adsız parça). 
+  `content_extension_mismatch`: `.pdf` adlı HTML, `.jpg` adlı SVG, `.docx` adlı
+  PDF gibi. Yalnız bayt karşılaştırması; hiçbir şey açılmaz. Tanınmayan içerik
+  bulgu değildir; `.jpg` adlı PNG ve parola korumalı (OLE) `.docx` de değildir.
+- **Uzantılar.** Tehlikeli liste posta sağlayıcılarının hiç teslim etmediği
+  türlerle genişledi (`.one`, `.xll`, `.chm`, `.url`, `.iqy`, `.dll`, `.msix`,
+  `.library-ms`…); arşivlere disk imajları (`.vhd`, `.vhdx`, `.cab`…), makro
+  belgelerine `.xlsb`/`.ppam` vb. eklendi.
+- **Dosya adı yazımı.** Uzantı, işletim sisteminin göreceği ada göre okunur:
+  `fatura.exe.`, `fatura.exe ` ve içine sıfır-genişlik karakter konmuş adlar
+  `.exe` sayılır.
+- **Adı konmamış dosyalar.** Yalnız `Content-ID` ile gömülü resimler (QR'ın
+  saklandığı yer), adsız `application/*` parçaları ve gövdesinin tamamı tek
+  dosya olan mailler artık ek listesinde ve tüm ek kontrollerinden geçer.
 
 **İtibar (online, opt-in)** — `vt_flagged` (VirusTotal, `VT_API_KEY` gerekir).
 
@@ -457,6 +476,12 @@ Her gösterge ayrıca bir **MITRE ATT&CK tekniğiyle** etiketlidir (`detector/mi
 içinde VBA projesi (`_VBA_PROJECT`) bulunmalı. PDF'te `/JS`/`/JavaScript`
 bulgudur; `/OpenAction` ve `/AA` tek başına raporlanmaz (sayfa/zoom ayarı da
 böyle yapılır), betiğin yanında kanıt satırına eklenir.
+
+HTML ve SVG ekler gövde gibi okunur (ek, tarayıcıda yerel dosya olarak açılan
+bir sayfadır): `html_attachment_form` (parola alanı ya da dışarı gönderen form)
+ve `html_attachment_script` (betikle yönlendirme, meta-refresh, gizlenmiş betik,
+SVG içinde betik/olay işleyici). Dosya başına **tek** bulgu çıkar; form varsa o
+raporlanır. Betiksiz HTML rapor ve düz SVG çizim bulgu üretmez.
 
 **QR / quishing (Tier 2)** — `qr_code_url`, `qr_suspicious_url`
 (OpenCV veya pyzbar backend'i kuruluysa).
@@ -552,7 +577,7 @@ seçenekler ve açıklamaları: [`config.example.toml`](config.example.toml).
 ## Testler
 
 ```bash
-python -m pytest -q      # 448 test
+python -m pytest -q      # 574 test
 ```
 
 Her push ve PR'da GitHub Actions bunları çalıştırır: **opsiyonel bağımlılık

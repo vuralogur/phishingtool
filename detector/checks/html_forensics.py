@@ -122,16 +122,36 @@ class _Scan(HTMLParser):
             self.hidden_chars += len(data.strip())
 
 
+def scan(html: str) -> _Scan:
+    """Parse markup and return what was found in it (never raises).
+
+    Public so the same reading can be applied to an HTML or SVG attachment
+    (``attachment_deep``) - a page that arrives as a file is still a page.
+    """
+    s = _Scan()
+    try:
+        s.feed(html or "")
+        s.close()
+    except Exception:
+        pass
+    return s
+
+
+def host_of(url: str) -> str:
+    """Hostname of an absolute URL, "" for relative / mailto / unparsable ones."""
+    return _host(url)
+
+
+def has_obfuscated_script(s: _Scan) -> bool:
+    return any(_JS_OBFUSCATION.search(body) for body in s.scripts)
+
+
 def run(email, online=False, ctx=None):
     html = email.html_body or ""
     if not html.strip():
         return []
 
-    s = _Scan()
-    try:
-        s.feed(html)
-    except Exception:
-        pass
+    s = scan(html)
 
     out = []
     from_rdom = registered_domain(email.from_domain)
