@@ -4,11 +4,12 @@ import os
 from pathlib import Path
 
 from . import config as _config
+from . import feeds as _feeds
 from . import parser as _parser
 from . import reputation
 from .checks import (
     headers, urls, content, attachments, auth_verify,
-    html_forensics, attachment_deep, qr, url_deep, social,
+    html_forensics, attachment_deep, qr, url_deep, social, threat_intel,
 )
 from .scoring import score, auth_level
 from .util import registered_domain
@@ -55,7 +56,7 @@ def resolve_data_dir(data_dir=None) -> Path:
     return Path(env) if env else _DATA
 
 
-def build_context(data_dir=None, config=None) -> dict:
+def build_context(data_dir=None, config=None, feeds_dir=None) -> dict:
     """Dictionaries + scoring policy, loaded once and reused for every mail.
 
     ``config`` is a path, an already-built ``config.Config``, or None; with
@@ -63,6 +64,11 @@ def build_context(data_dir=None, config=None) -> dict:
     applies, so the default run is unchanged.
     A broken file raises ``config.ConfigError`` here rather than silently
     scoring the whole batch with defaults nobody asked for.
+
+    ``feeds_dir`` is the folder of downloaded threat lists (``feeds.py``):
+    None = the default / PHISHINGTOOL_FEEDS folder, ``False`` = use no lists.
+    The lists are read from disk here and never fetched; a machine that has not
+    run ``phishingtool feeds update`` has none and nothing changes.
     """
     d = resolve_data_dir(data_dir)
     brands = _load_brands(d / "brands.txt")
@@ -89,6 +95,8 @@ def build_context(data_dir=None, config=None) -> dict:
         "lure_words": (_load_set(d / "lure_words.txt")
                        or _load_set(_DATA / "lure_words.txt")),
         "config": _config.resolve(config),
+        "feeds": (_feeds.FeedSet() if feeds_dir is False
+                  else _feeds.load(feeds_dir)),
     }
 
 
@@ -124,6 +132,7 @@ def analyze(email, online=False, ctx=None):
     indicators += attachments.run(email, online, ctx)
     indicators += attachment_deep.run(email, online, ctx)
     indicators += qr.run(email, online, ctx)
+    indicators += threat_intel.run(email, online, ctx)
     indicators += reputation.run(email, online, ctx)
     return score(indicators, auth, from_rdom=from_rdom, level=level,
                  allowlist=ctx.get("allowlist"), config=ctx.get("config"))

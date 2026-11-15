@@ -85,6 +85,8 @@ TECHNIQUES = {
     "excessive_subdomains": "T1583.001",
     "random_host": "T1583.001",
     "tld_swap_domain": "T1583.001",
+    # Registered days ago: infrastructure bought for this campaign.
+    "newly_registered_domain": "T1583.001",
     # Somebody else's free hosting / tunnel instead of a registered domain.
     "free_hosting_url": "T1583.006",
     # The brand's domain shown in the path of an unrelated host.
@@ -157,6 +159,9 @@ TECHNIQUES = {
 # so inventing a technique for them would pollute the coverage map.
 NO_TECHNIQUE = frozenset({
     "vt_flagged",
+    # Like vt_flagged: a block list's verdict, not a technique we observed.
+    "threat_feed_hit",
+    "threat_feed_neighbor",
     "no_spf_record",
     "no_dmarc_record",
     "no_received_headers",

@@ -49,6 +49,9 @@ SOFT_IDS = {
     "free_hosting_url", "brand_in_path",
     # A "RE:" on a mail that replies to nothing; some clients drop the headers.
     "fake_reply_subject",
+    # Another page on the same host is on a threat list. The host may be the
+    # attacker's alone - or a service thousands of unrelated sites share.
+    "threat_feed_neighbor",
     # attachment "capability" (not confirmed malicious)
     "archive_attachment", "macro_document", "mime_extension_mismatch",
     "pdf_embedded_file",

@@ -23,8 +23,12 @@ risk skoru üretir (`low` / `medium` / `high` / `critical`). Türkçe arayüz/ç
   sınırıyla: ZIP **dizini** (dosya adları + şifreli bayrağı; üye çıkarılmaz),
   OOXML'in yalnız `*.rels` dosyaları, PDF'in yalnız `/ObjStm` akışları. Bunun
   ötesi (üye çıkarma, makro/betik çalıştırma, sayfa render) sınırın dışındadır.
-- **Ağ işlemleri opt-in** — DNS/WHOIS/itibar/canlı SPF-DKIM-DMARC yalnızca
-  `--online` ile. Varsayılan tamamen çevrimdışı.
+- **Ağ işlemleri opt-in** — DNS/RDAP (domain yaşı)/itibar/canlı SPF-DKIM-DMARC
+  yalnızca `--online` ile. Varsayılan tamamen çevrimdışı. Tek başka ağ kodu
+  `phishingtool feeds update`: kullanıcı açıkça yazınca herkese açık tehdit
+  listelerini **indirir**, karşıya mailden hiçbir şey göndermez. Analiz
+  sırasında liste **asla indirilmez**; eşleştirme diskteki dosyaya karşı yereldir
+  (`detector/feeds.py` — `update()` ağ, `load()`/`lookup()` yerel, ikisi ayrı).
 - Analiz edilen e-posta **yerelde kalır**. İtibar sorguları yalnızca **domain**
   gönderir, e-posta içeriğini asla göndermez.
 
@@ -49,10 +53,15 @@ python -m detector.cli analyze mail.eml --config config.toml
 python -m detector.cli batch klasor/ [--iocs] [--verbose]
 # etiketli korpusa karşı ölçüm (precision/recall/F1 + hata listesi)
 python -m detector.cli bench corpus/ [--threshold high] [--json]
+# tehdit listeleri: indir (ağ; mail verisi gitmez) / eldekini göster
+python -m detector.cli feeds update [--source usom] [--days 30]
+python -m detector.cli feeds status [--json]
+# indirilen listeler her analizde yerelde okunur; --feeds-dir / --no-feeds
+python -m detector.cli analyze mail.eml --no-feeds
 # GUI
 python run_gui.py
-# testler
-python -m pytest -q      # 707 test (CI: 3.11–3.14 Linux + 3.12 Windows)
+# testler (ağa çıkmaz: conftest HTTP yardımcılarını kapatır)
+python -m pytest -q      # 888 test (CI: 3.11–3.14 Linux + 3.12 Windows)
 ```
 
 ## Mimari
@@ -100,8 +109,10 @@ python -m pytest -q      # 707 test (CI: 3.11–3.14 Linux + 3.12 Windows)
   alanlarından kurulur (`5D02`/`0042` From, `39FE`+`0C15` alıcılar, `0039` FILETIME
   tarih) ve `header_source="mapi"` döner. Ekler baytı baytına korunur; gömülü
   mesajlar (stream değil storage) atlanır. Hiçbir şey çalıştırılmaz/çözülmez.
-- `detector/analyzer.py` — orkestrasyon. `build_context(data_dir, config)` veri
-  dosyalarını + skorlama politikasını yükler (`ctx["config"]`). Analiz başında
+- `detector/analyzer.py` — orkestrasyon. `build_context(data_dir, config,
+  feeds_dir=None)` veri dosyalarını + skorlama politikasını (`ctx["config"]`) +
+  indirilmiş tehdit listelerini (`ctx["feeds"]`; `feeds_dir=False` = liste
+  kullanma) yükler. Analiz başında
   **güven bağlamı** hesaplar (`auth_level`, `from_rdom`) ve hem check'lere
   (ctx içinde) hem `score()`'a geçirir.
 - `detector/config.py` — opsiyonel TOML override'ı, saf stdlib (`tomllib`).
@@ -170,6 +181,39 @@ python -m pytest -q      # 707 test (CI: 3.11–3.14 Linux + 3.12 Windows)
   `--json` ile stdout geçerli JSON kalsın, yazma hatasında exit 2.
 - `detector/cli.py` — `batch` hata sebebini **yutmaz**: satır `error` kolonuna +
   stderr'e yazılır, `--verbose` traceback ekler, en az bir hata varsa exit 1.
+  `_context(args)` üç analiz komutunun ortak `build_context` çağrısı
+  (`--data-dir`, `--config`, `--feeds-dir`/`--no-feeds`). `feeds update|status`
+  (`cmd_feeds`): kaynak başına `OK|ATLANDI|HATA` satırı; bir kaynak `failed`
+  ise **ya da** adıyla istenen kaynak atlandıysa exit 1, `--days < 1` exit 2.
+- `detector/feeds.py` — tehdit listeleri, saf stdlib (`urllib`). **İki yarı
+  birbirine değmez**: `update(sources, feeds_dir, days, now)` tek ağ kodu
+  (yalnız `feeds update` çağırır) → `list[UpdateResult(source, status
+  ok|skipped|failed, entries, message)]`; `load(feeds_dir) -> FeedSet` yalnız
+  diski okur (klasör yok = boş/falsy küme). `SOURCES` = `openphish`
+  (`openphish.com/feed.txt`, satır başına URL), `usom`
+  (`siberguvenlik.gov.tr/api/address/index?per-page=5000&date_gte=…&page=N`,
+  sayfa 1'den başlar, JSON `models[].url`; yalnız son `days` gün, tavan
+  `USOM_MAX_PAGES`), `urlhaus` (`urlhaus-api.abuse.ch/v2/files/exports/<KEY>/
+  recent.csv`; `URLHAUS_AUTH_KEY` yoksa `skipped`, anahtar hata metninde `***`).
+  Eski adresler öldü: `urlhaus.abuse.ch/downloads/*` 410, `usom.gov.tr/
+  url-list.txt` HTML döndürür — bu yüzden `parse_url_lines` "satırların çoğu URL
+  mü" diye bakar ve **başarısız/boş indirme diskteki listeyi ezmez** (`.tmp` +
+  `os.replace`). `url_key()` = karşılaştırma biçimi (`host` ya da
+  `host/yol?sorgu`; şema, `www.`, sondaki `/`, fragment, port atılır; IP düz
+  yazılır; yol büyük/küçük harfi korunur; `mailto:` vb. = ""). `FeedSet.lookup
+  (url) -> Hit(kind, source, entry)`: `url` (tam adres) > `host` > `domain`
+  (kayıtlı domain listede) > `path` (aynı host'ta **başka** adres listede);
+  `lookup_host()` gönderen domaini için (yalnız host/domain). Klasör:
+  `--feeds-dir` > `PHISHINGTOOL_FEEDS` > `default_dir()` (kullanıcı önbelleği).
+  Klasördeki her `*.txt` okunur (elle yazılmış `kurum.txt` dahil; BOM/CRLF olur);
+  `FeedInfo` (`source`, `entries`, `fetched`, `age_days()`, `stale()` >
+  `STALE_DAYS` = 7, `error`).
+- `detector/rdap.py` — domain kayıt tarihi, saf stdlib, **yalnız `--online`**.
+  `age_days(domain)` / `registration_date()` / `parse_registration(payload)`
+  (`events[].eventAction == "registration"`). `rdap.org/domain/<domain>`
+  (IANA bootstrap yönlendiricisi); yalnız düz domain gider (`_ascii_domain`
+  yol/sorgu/boşluk içereni göndermez). Her hata/404/RDAP'sız TLD (`.tr` dahil)
+  = `None` = bulgu yok. Süreç içi `_cache` (başarısızlık da hatırlanır).
 
 ### Check modülleri
 
@@ -185,6 +229,7 @@ python -m pytest -q      # 707 test (CI: 3.11–3.14 Linux + 3.12 Windows)
 | `checks/attachments.py` | `double_extension`, `dangerous_attachment`, `macro_document`, arşiv, MIME uyuşmazlığı, `disguised_executable` (sert: içerik exe, ad değil), `content_extension_mismatch` (yumuşak, `CONTENT_EXPECT`) | ad + MIME + içerik imzası (`filetype.sniff`); bayt/MIME aynı eki yalanlıyorsa **tek** bulgu |
 | `checks/attachment_deep.py` | **Tier 2**: `html_smuggling`, `macro_detected/autoexec`, `pdf_active_content`, `pdf_launch_action`, HTML/SVG ek = sayfa (`_page`): `html_attachment_form` (sert 16) **ya da** `html_attachment_script` (sert 14); ZIP dizini: `archive_dangerous_member` (sert 18; `DANGEROUS` − sayfa uzantıları + disk imajları), `archive_encrypted` (yumuşak 8, taşıyıcı); OOXML: `remote_template` (sert 18; `attachedTemplate`/`oleObject`/`frame`/`subDocument` + **uzak** hedef — Word'ün yerel `file:///C:/…` şablon kaydı değil); PDF adları `/ObjStm` içinde de aranır | içeriğe göre; oletools opsiyonel. Sayfa okuması `html_forensics.scan()` ile; dosya başına **tek** bulgu (form kazanır) — meşru "güvenli mesaj" HTML ekleri critical'a çıkmasın |
 | `checks/qr.py` | **Tier 2** quishing: resim/`data:` içindeki QR çözüp URL denetler | opencv veya pyzbar opsiyonel; yoksa sessiz atlar |
+| `checks/threat_intel.py` | **Yerel:** `threat_feed_hit` (sert 25; link tam adres/host/kayıtlı domain ya da From/Reply-To domaini listede), `threat_feed_neighbor` (yumuşak 10; aynı host'ta başka adres listede). **Online:** `newly_registered_domain` (RDAP, < `NEW_DOMAIN_DAYS` = 30 gün; sert 12, auth pass → 6; mail başına en çok `MAX_AGE_LOOKUPS` = 5 sorgu, gönderen önce) | liste yoksa (`ctx["feeds"]` boş) hiçbir şey üretmez. `_excused()`: host düzeyi eşleşme marka/allowlist/`own_domains` domaininde, kısaltıcıda ve barındırma servisinin **kendisinde** (`pages.dev`) sayılmaz; **tam adres** eşleşmesi her yerde sayılır, `x.pages.dev` tek kiracıdır ve sayılır. Yaş sorgusu marka/allowlist/freemail/kısaltıcı/barındırma/IP için yapılmaz. İki feed id'si `NO_TECHNIQUE` (`vt_flagged` gibi) |
 | `reputation.py` | `vt_flagged` (VirusTotal) | online + `VT_API_KEY` |
 
 ## Skorlama modeli (yanlış-pozitif önleme)
@@ -370,7 +415,12 @@ değil politika. Şablon repo kökünde `config.example.toml`; şema ve kurallar
   `[soft_ids]`. Opt-in (cwd otomatik taranmaz), sesli hata (exit 2), rapor +
   `breakdown.config` içinde görünür. Şablon: `config.example.toml`.
   **Roadmap'in 9 maddesi bitti** — kalan iş: ML sınıflandırıcı (Tier 3),
-  threat intel API, GUI önizleme, PDF rapor, `batch --html`.
+  GUI önizleme, PDF rapor, `batch --html`.
+- **Tehdit listeleri + domain yaşı** — **DONE** (`detector/feeds.py`,
+  `detector/rdap.py`, `checks/threat_intel.py`; `feeds update|status`,
+  `--feeds-dir`/`--no-feeds`). URLhaus anahtarsız **canlı denenmedi** (yalnız
+  belgelenen `recent.csv` adresi + sahte yanıtla test). PhishTank / Google Safe
+  Browsing yok.
 
 Örnek: `python -m detector.cli analyze tests/samples/phish_tier2.eml` → critical 100.
 
@@ -384,3 +434,20 @@ değil politika. Şablon repo kökünde `config.example.toml`; şema ve kurallar
 - **Bash heredoc `\\` → `\`** çökertir (raw-string regex bozulur). Backslash-yoğun
   içerik için `Edit` aracını kullan; heredoc gerekiyorsa `chr(92)` ile düzelt.
 - Windows konsolu cp1254; CLI çıktısı için stdout UTF-8'e `reconfigure` edilir.
+- **Testler ağa çıkmaz ve bu makinenin listelerini görmez**: `tests/conftest.py`
+  import anında `PHISHINGTOOL_FEEDS`'i var olmayan bir klasöre sabitler (modül
+  düzeyindeki `CTX = build_context()` fixture'dan önce çalışır) ve autouse
+  fixture `feeds._http_get` / `rdap._http_get`'i "çağrılırsa hata" ile değiştirir.
+  `online=True` ile `analyzer.analyze` çağıran test canlı DNS de açar
+  (`auth_verify`) — `tests/test_threat_intel.py`'deki `ages` fixture'ı gibi
+  üç `auth_verify._*` fonksiyonunu kapat. Test domainlerinde `.example` kullanma:
+  tldextract'te kayıtlı domain `example` çıkar, domain mantığı hiç çalışmaz.
+- **Bu makinede tldextract kurulu, CI çekirdek işinde değil.** Yalnız yedek
+  yolda (`util.registered_domain` son-iki-etiket) yaşayan hata yerelde hiç
+  görünmez: `garantibbva.com.tr` → `com.tr` üç push boyunca CI'ı kırmızı tuttu.
+  Yedek yol artık iki parçalı ülke soneklerini biliyor
+  (`util._FALLBACK_SECOND_LEVEL` + `_TR`); `tests/test_domain_fallback.py`
+  tldextract'i kendisi kapatıp sınar. Domain mantığına dokunan değişiklikten
+  sonra opsiyonel paketsiz koşuyu da dene (`sys.modules["tldextract"] = None`
+  yapıp `pytest.main()` çağıran tek satırlık betik yeter) ve push'tan sonra
+  `gh run list --limit 1` ile CI'a bak.

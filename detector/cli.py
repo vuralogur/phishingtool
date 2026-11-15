@@ -4,10 +4,13 @@
                                           [--html DOSYA]
   phishingtool batch   <dir>              [--online] [--json] [--iocs] [--verbose]
   phishingtool bench   <corpus dir>       [--threshold high] [--json]
+  phishingtool feeds   update|status      [--source NAME] [--days N] [--json]
 
-Every subcommand also takes --data-dir (dictionaries) and --config (scoring
-weights/thresholds); both default to the built-ins, so a bare run is offline and
-unconfigured.
+Every analysis subcommand also takes --data-dir (dictionaries), --config
+(scoring weights/thresholds) and --feeds-dir / --no-feeds (downloaded threat
+lists); all default to the built-ins, so a bare run is offline and unconfigured.
+`feeds update` is the one command whose purpose is the network: it downloads
+block lists and sends nothing about any mail.
 
 Installed as the `phishingtool` console script; `python -m detector.cli ...`
 works identically from a source checkout.
@@ -20,7 +23,7 @@ import sys
 import traceback
 from pathlib import Path
 
-from . import (analyzer, bench as _bench, config as _config,
+from . import (analyzer, bench as _bench, config as _config, feeds as _feeds,
                html_report as _html, iocs as _iocs, parser as _parser,
                received as _received, report)
 
@@ -33,8 +36,13 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 
+def _context(args) -> dict:
+    return analyzer.build_context(
+        args.data_dir, args.config, False if args.no_feeds else args.feeds_dir)
+
+
 def cmd_analyze(args) -> int:
-    ctx = analyzer.build_context(args.data_dir, args.config)
+    ctx = _context(args)
     src = args.input
     # Parse first: --iocs needs the ParsedEmail, not just the score.
     if src == "-":
@@ -75,7 +83,7 @@ def cmd_analyze(args) -> int:
 
 
 def cmd_batch(args) -> int:
-    ctx = analyzer.build_context(args.data_dir, args.config)
+    ctx = _context(args)
     d = Path(args.dir)
     if not d.is_dir():
         print("HATA: klasor yok: " + args.dir, file=sys.stderr)
@@ -146,7 +154,7 @@ def cmd_bench(args) -> int:
     try:
         result = _bench.run(args.dir, labels_path=args.labels,
                             threshold=args.threshold, online=args.online,
-                            ctx=analyzer.build_context(args.data_dir, args.config))
+                            ctx=_context(args))
     except _bench.BenchError as exc:
         print("HATA: " + str(exc), file=sys.stderr)
         return 2
@@ -154,6 +162,55 @@ def cmd_bench(args) -> int:
         print(report.bench_to_json(result, source=args.dir))
     else:
         report.print_bench(result, source=args.dir, limit=args.limit)
+    return 0
+
+
+_FEED_STATUS = {"ok": "OK", "skipped": "ATLANDI", "failed": "HATA"}
+
+
+def cmd_feeds(args) -> int:
+    """Download the threat lists (`update`) or show what is on disk (`status`)."""
+    folder = _feeds.resolve_dir(args.feeds_dir)
+    if args.action == "update":
+        if args.days < 1:
+            print("HATA: --days en az 1 olmali", file=sys.stderr)
+            return 2
+        results = _feeds.update(args.source, folder, days=args.days)
+        # A source nobody can fetch here (URLhaus without a key) is skipped
+        # quietly in a default run, but asking for it by name and not getting
+        # it is a failure.
+        asked = set(args.source or ())
+        failed = [r for r in results if r.status == "failed"
+                  or (r.status == "skipped" and r.source in asked)]
+        if args.json:
+            print(json.dumps({"dir": str(folder),
+                              "results": [r.to_dict() for r in results]},
+                             ensure_ascii=False, indent=2))
+        else:
+            for r in results:
+                print(r.source.ljust(11) + _FEED_STATUS[r.status].ljust(9)
+                      + (str(r.entries) + " kayit" if r.status == "ok" else r.message))
+            print("Klasor: " + str(folder))
+        return 1 if failed else 0
+
+    feeds = _feeds.load(folder)
+    if args.json:
+        print(json.dumps({"dir": str(folder),
+                          "feeds": [m.to_dict() for m in feeds.meta]},
+                         ensure_ascii=False, indent=2))
+        return 0
+    print("Klasor: " + str(folder))
+    if not feeds.meta:
+        print("Yuklu liste yok. Indirmek icin: phishingtool feeds update")
+        return 0
+    for m in feeds.meta:
+        if m.error:
+            print(m.source.ljust(11) + "OKUNAMADI  " + m.error)
+            continue
+        age = m.age_days()
+        print(m.source.ljust(11) + (str(m.entries) + " kayit").ljust(15)
+              + m.fetched.strftime("%Y-%m-%d") + "  " + str(age) + " gun once"
+              + ("  ESKI - `phishingtool feeds update`" if m.stale() else ""))
     return 0
 
 
@@ -173,12 +230,19 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Skorlama ayar dosyasi (TOML): agirlik/esik/yumusak "
                              "carpan override'i. Verilmezse dahili model kullanilir; "
                              "PHISHINGTOOL_CONFIG ortam degiskeni de gecerli")
+    common.add_argument("--feeds-dir", metavar="KLASOR",
+                        help="Indirilmis tehdit listelerinin klasoru (varsayilan: "
+                             "kullanici onbellegi; PHISHINGTOOL_FEEDS de gecerli). "
+                             "Listeler yalniz okunur, analiz sirasinda indirilmez")
+    common.add_argument("--no-feeds", action="store_true",
+                        help="Indirilmis tehdit listelerini bu kosuda kullanma")
 
     a = sub.add_parser("analyze", parents=[common],
                        help="Tek bir .eml/.msg dosyasini veya stdin'i analiz et")
     a.add_argument("input", help=".eml veya .msg yolu, ya da '-' (stdin ham e-posta)")
     a.add_argument("--online", action="store_true",
-                   help="DNS/WHOIS/itibar sorgularini etkinlestir (ag kullanir)")
+                   help="DNS / domain yasi (RDAP) / itibar sorgularini "
+                        "etkinlestir (ag kullanir; yalniz domain adi gider)")
     a.add_argument("--json", action="store_true", help="JSON cikti")
     a.add_argument("--iocs", action="store_true",
                    help="IOC listesi ekle: URL/domain/IP/e-posta/ek SHA256 "
@@ -216,6 +280,23 @@ def build_parser() -> argparse.ArgumentParser:
     n.add_argument("--online", action="store_true")
     n.add_argument("--json", action="store_true")
     n.set_defaults(func=cmd_bench)
+
+    f = sub.add_parser(
+        "feeds",
+        help="Tehdit listeleri: 'update' indirir (ag kullanir, mail verisi "
+             "gondermez), 'status' eldeki listeleri gosterir")
+    f.add_argument("action", choices=("update", "status"))
+    f.add_argument("--source", action="append", choices=_feeds.SOURCES,
+                   help="Yalniz bu kaynagi indir (tekrarlanabilir; varsayilan: hepsi). "
+                        "urlhaus icin URLHAUS_AUTH_KEY ortam degiskeni gerekir")
+    f.add_argument("--days", type=int, default=_feeds.USOM_DAYS,
+                   help="USOM listesinin kac gunluk kismi indirilsin "
+                        "(varsayilan: " + str(_feeds.USOM_DAYS) + ")")
+    f.add_argument("--feeds-dir", metavar="KLASOR",
+                   help="Liste klasoru (varsayilan: kullanici onbellegi; "
+                        "PHISHINGTOOL_FEEDS de gecerli)")
+    f.add_argument("--json", action="store_true", help="JSON cikti")
+    f.set_defaults(func=cmd_feeds)
     return p
 
 

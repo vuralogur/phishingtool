@@ -19,7 +19,7 @@ pip install -e .
 
 # İhtiyacına göre opsiyonel gruplar (hiçbiri şart değil):
 pip install -e ".[cli]"     # rich tablo + tldextract
-pip install -e ".[online]"  # --online: canlı SPF/DKIM/DMARC, WHOIS, itibar
+pip install -e ".[online]"  # --online: canlı SPF/DKIM/DMARC, itibar (domain yaşı/RDAP ek paket istemez)
 pip install -e ".[deep]"    # Tier 2: oletools makro, OpenCV QR
 pip install -e ".[gui]"     # masaüstü arayüz
 pip install -e ".[dev]"     # pytest
@@ -69,8 +69,12 @@ python -m detector.cli batch klasor/ --verbose   # bozuk dosyalar için tracebac
 # Etiketli korpusa karşı doğruluk ölçümü (precision / recall / F1)
 python -m detector.cli bench corpus/
 
-# Ağ sorgularını aç (SPF/DMARC DNS, WHOIS, itibar API — opt-in)
+# Ağ sorgularını aç (SPF/DMARC DNS, domain yaşı/RDAP, itibar API — opt-in)
 python -m detector.cli analyze mail.eml --online
+
+# Tehdit listelerini indir (OpenPhish, USOM); eşleştirme sonra yerelde yapılır
+python -m detector.cli feeds update
+python -m detector.cli feeds status
 
 # Kendi ağırlık/eşiklerinle skorla (her komutta geçerli)
 python -m detector.cli analyze mail.eml --config config.toml
@@ -95,7 +99,7 @@ python run_gui.py
   (sert/yumuşak toplam, çarpan, verdict nedeni) + tek satırlık **Received özeti**
   (hop sayısı, köken IP, uyarılar) + severity renkli **gösterge kartları**
   (kanıt + açıklama).
-- **Online** anahtarı DNS/WHOIS/itibar sorgularını açar; analiz arka planda çalışır,
+- **Online** anahtarı DNS/RDAP/itibar sorgularını açar; analiz arka planda çalışır,
   pencere donmaz.
 - **JSON Kaydet** ile raporu dosyaya yaz (Received zinciri de içinde).
 
@@ -307,6 +311,77 @@ Ek bağımlılık gerekmez — ölçüm de rapor da saf standart kütüphane.
 
 > Korpusundaki gerçek e-postaları **repo'ya commit'leme** — `.gitignore` zaten
 > `corpus/**/*.eml` ve `corpus/labels.csv`'yi hariç tutar.
+
+## Tehdit listeleri — `feeds`
+
+Bir linkin "kötü" olduğunu bilmenin en kısa yolu, birinin onu zaten
+raporlamış olmasıdır. `feeds update` herkese açık engel listelerini indirir;
+analiz, mailin linklerini ve gönderen domainini bu listelerde **yerelde** arar.
+
+```bash
+phishingtool feeds update                      # hepsini indir
+phishingtool feeds update --source usom --days 90
+phishingtool feeds status                      # ne var, ne kadar eski
+```
+
+```
+openphish  OK       294 kayit
+usom       OK       5240 kayit
+urlhaus    ATLANDI  URLHAUS_AUTH_KEY tanimli degil (ucretsiz anahtar: https://auth.abuse.ch/)
+```
+
+| Kaynak | Ne | Not |
+|--------|----|-----|
+| `openphish` | OpenPhish topluluk listesi: phishing URL'leri | anahtar gerekmez |
+| `usom` | USOM / Siber Güvenlik Başkanlığı zararlı bağlantılar listesi: domain, IP, URL | yalnız son `--days` gün (varsayılan 30) iner; listenin tamamı yarım milyon satır |
+| `urlhaus` | abuse.ch URLhaus: zararlı yazılım dağıtan URL'ler | ücretsiz Auth-Key ister (`URLHAUS_AUTH_KEY`); yoksa atlanır |
+
+**Ağ yalnız bu komutta kullanılır.** `feeds update` listeyi indirir ve karşı
+tarafa isteğin kendisinden başka hiçbir şey göndermez — mail, adres ya da
+mailden alınmış bir domain gitmez. Analiz sırasında hiçbir şey indirilmez ve
+hiçbir yere sorgu atılmaz: eşleştirme diskteki dosyaya karşı bir sözlük
+aramasıdır. `feeds update` hiç çalıştırılmamış bir makinede liste yoktur ve
+çıktı birebir eskisi gibidir.
+
+İki gösterge:
+
+- `threat_feed_hit` (sert, 25) — linkin **tam adresi**, **host'u** ya da
+  **kayıtlı domaini** listede; ya da gönderenin (From / Reply-To) domaini
+  listede. Kanıt satırı kaynağı ve listenin tarihini yazar:
+  `kotu-site.com - OpenPhish listesinde (liste tarihi 2026-11-15)`.
+- `threat_feed_neighbor` (yumuşak, 10) — linkin kendisi listede değil ama
+  **aynı host'taki başka bir adres** listede (`kotu-site.com/a` listede, mailde
+  `kotu-site.com/b`). Host tümüyle saldırgana ait olabilir, paylaşımlı bir
+  servis de olabilir; tek başına verdict taşımaz. Sizin için kesinse
+  `[soft_ids] remove = ["threat_feed_neighbor"]`.
+
+Liste başkasının hükmüdür ve hata içerir; bu yüzden üç şey **yalnız host
+eşleşmesiyle** asla işaretlenmez: bir markanın / allowlist'teki / kendi
+kurumunuzun domaini (`docs.google.com`'daki tek bir form listede diye bütün
+Google Docs linkleri değil), URL kısaltıcılar (`bit.ly`) ve ücretsiz barındırma
+servisinin kendisi (`pages.dev`). Böyle bir host'taki **tam adres** eşleşmesi
+ise yine bulgudur; `x.pages.dev` gibi tek kiracının host'u da öyle.
+
+Dosyalar düz metindir (satır başına `host` ya da `host/yol?sorgu`). Klasördeki
+her `*.txt` okunur: kendi engel listenizi `kurum.txt` adıyla yanına koymanız
+yeter (satır başına bir URL, domain ya da IP). 7 günden eski liste yine
+eşleşir, kanıt satırı kaç gün eski olduğunu söyler.
+
+Klasör: `--feeds-dir` > `PHISHINGTOOL_FEEDS` > kullanıcı önbelleği
+(`%LOCALAPPDATA%\phishingtool\feeds`, Linux/macOS'ta `~/.cache/phishingtool/feeds`).
+`--no-feeds` o koşuda listeleri kullanmaz (tekrarlanabilir `bench` için).
+İndirme hatası sessiz geçmez: kaynak `HATA` satırıyla yazılır, komut 1 döner ve
+**diskteki eski liste korunur** (taşınmış bir adresin döndürdüğü HTML sayfası
+liste diye yazılmaz).
+
+**Domain yaşı (`--online`).** Phishing domainleri kullanılmadan günler önce
+kaydedilir. `--online` ile gönderenin ve linklerin kayıtlı domainleri için
+RDAP'a kayıt tarihi sorulur (mail başına en çok 5 domain; yalnız domain adı
+gider). 30 günden yeni domain `newly_registered_domain` üretir: doğrulanmamış
+gönderende 12 puan, DMARC pass gönderende 6 (yeni kurulmuş meşru bir işletme
+tek başına `medium` olmasın). Markalar, allowlist, ücretsiz posta ve barındırma
+servisleri, kısaltıcılar ve IP adresleri sorulmaz. RDAP konuşmayan uzantılarda
+(`.tr` dahil birçok ülke uzantısı) cevap yoktur ve cevap yokluğu bulgu değildir.
 
 ## Verdict (risk seviyesi) — kimlik doğrulamaya duyarlı
 
@@ -529,7 +604,11 @@ korunur — benzeri gönderen/link domaini `lookalike_domain` / `combosquat_doma
   saklandığı yer), adsız `application/*` parçaları ve gövdesinin tamamı tek
   dosya olan mailler artık ek listesinde ve tüm ek kontrollerinden geçer.
 
-**İtibar (online, opt-in)** — `vt_flagged` (VirusTotal, `VT_API_KEY` gerekir).
+**İtibar (online, opt-in)** — `vt_flagged` (VirusTotal, `VT_API_KEY` gerekir),
+`newly_registered_domain` (RDAP).
+
+**Tehdit listeleri (yerel)** — `threat_feed_hit`, `threat_feed_neighbor`
+(yumuşak); yalnız `feeds update` ile liste indirilmişse (yukarıda).
 
 Her gösterge ayrıca bir **MITRE ATT&CK tekniğiyle** etiketlidir (`detector/mitre.py`).
 
@@ -666,9 +745,13 @@ seçenekler ve açıklamaları: [`config.example.toml`](config.example.toml).
 ## Gizlilik ve güvenlik
 
 - **Offline-first:** çekirdek analiz ağ kullanmaz. `--online` olmadan hiçbir
-  DNS/WHOIS/API çağrısı yapılmaz.
+  DNS/RDAP/API çağrısı yapılmaz.
 - **İtibar sorgusu** (`--online` + `VT_API_KEY`) yalnızca **domain adlarını**
-  VirusTotal'a gönderir; e-posta içeriği gönderilmez.
+  VirusTotal'a gönderir; e-posta içeriği gönderilmez. **Domain yaşı**
+  (`--online`) da yalnız kayıtlı domain adını RDAP'a sorar.
+- **Tehdit listeleri** yalnız siz `feeds update` yazdığınızda iner; o komut
+  hiçbir mail verisi göndermez. Analizde eşleştirme yereldir — listede aranan
+  link kimseye sorulmaz.
 - Bağlantılar **hiçbir zaman ziyaret edilmez**; ekler **hiçbir zaman
   çalıştırılmaz, bir uygulamayla açılmaz, diske çıkarılmaz**. Kapsayıcıların
   yalnız **yapısı** bellekte ve boyut sınırıyla okunur: ZIP'in dosya listesi
@@ -679,8 +762,12 @@ seçenekler ve açıklamaları: [`config.example.toml`](config.example.toml).
 ## Testler
 
 ```bash
-python -m pytest -q      # 707 test
+python -m pytest -q      # 888 test
 ```
+
+Testler ağa çıkmaz: liste indirme ve RDAP yardımcıları `tests/conftest.py`
+içinde "çağrılırsa hata ver" ile değiştirilir, indirme testleri kendi sahte
+yanıtlarını kurar.
 
 Her push ve PR'da GitHub Actions bunları çalıştırır: **opsiyonel bağımlılık
 kurulmadan** Python 3.11/3.12/3.13/3.14 (Linux) + 3.12 (Windows) — yeşil kalması
@@ -691,7 +778,7 @@ kurulmadan** Python 3.11/3.12/3.13/3.14 (Linux) + 3.12 (Windows) — yeşil kalm
 
 ```
 detector/
-  cli.py          # komut satırı (analyze / batch / bench, --iocs, --hops, --config)
+  cli.py          # komut satırı (analyze / batch / bench / feeds, --iocs, --hops, --config)
   config.py       # opsiyonel TOML: ağırlık/eşik/yumuşak küme override'ı
   iocs.py         # IOC çıkarımı: URL/domain/IP/e-posta/ek SHA256 (+ defang)
   received.py     # Received zinciri -> hop listesi (gecikme, ters ad, TLS) — DNS yok
@@ -706,6 +793,8 @@ detector/
   report.py       # rich tablo / düz metin / JSON çıktı
   html_report.py  # tek dosyalık HTML rapor (gömülü CSS, JS yok)
   reputation.py   # opsiyonel VirusTotal (online)
+  feeds.py        # tehdit listeleri: `feeds update` indirir, analiz yerelde eşleştirir
+  rdap.py         # domain kayıt tarihi (RDAP) — yalnız --online
   data/           # sözlükler (paketle birlikte kurulur)
 gui/              # CustomTkinter masaüstü arayüz
 corpus/           # (opsiyonel, yerel) bench korpusu — gerçek mailler commit'lenmez
