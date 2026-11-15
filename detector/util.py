@@ -39,6 +39,21 @@ _FALLBACK_SUFFIXES = {
     "ua", "ae", "sa", "az", "kz", "bg", "rs", "hr", "sk", "si", "lt", "lv",
 }
 
+# Second-level labels that are themselves public suffixes under a country code
+# ("com.tr", "co.uk", "com.br"). Without them the last-two-labels fallback reads
+# garantibbva.com.tr as "com.tr" - every Turkish bank becomes the same domain
+# and its own mail looks like a subdomain trick. Kept short on purpose: a label
+# listed here that is NOT a suffix somewhere (x.com.de) only makes the fallback
+# treat a subdomain as its own domain, the less harmful of the two mistakes.
+_FALLBACK_SECOND_LEVEL = {
+    "com", "net", "org", "gov", "edu", "mil", "co", "ac", "or", "ne", "go",
+    "nom", "ltd", "plc", "sch",
+}
+_FALLBACK_SECOND_LEVEL_TR = {
+    "gen", "web", "info", "biz", "tv", "name", "bel", "pol", "av", "dr", "bbs",
+    "tsk", "kep", "k12", "tel",
+}
+
 # Turkish letters that a dictionary entry and the mail may spell differently.
 # str.lower() maps "I" to "i" and never to "ı", so "VAKIFBANK".lower() can never
 # equal "vakıfbank" — folding BOTH sides is the only comparison that works.
@@ -227,8 +242,9 @@ def looks_like_domain(token: str) -> bool:
 def registered_domain(host: str) -> str:
     """Registrable domain: a.b.example.co.uk -> example.co.uk.
 
-    IPs are returned unchanged. Falls back to the last two labels when
-    tldextract is unavailable.
+    IPs are returned unchanged. Without tldextract it falls back to the last
+    two labels - three when the ending is a known two-part country suffix
+    (``_FALLBACK_SECOND_LEVEL``), so example.com.tr stays example.com.tr.
     """
     host = (host or "").strip().lower().rstrip(".")
     if not host:
@@ -241,6 +257,10 @@ def registered_domain(host: str) -> str:
             return ext.domain + "." + ext.suffix
         return ext.domain or host
     parts = host.split(".")
+    if len(parts) >= 3 and len(parts[-1]) == 2 and (
+            parts[-2] in _FALLBACK_SECOND_LEVEL
+            or (parts[-1] == "tr" and parts[-2] in _FALLBACK_SECOND_LEVEL_TR)):
+        return ".".join(parts[-3:])
     return ".".join(parts[-2:]) if len(parts) >= 2 else host
 
 
