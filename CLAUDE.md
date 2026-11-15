@@ -52,7 +52,7 @@ python -m detector.cli bench corpus/ [--threshold high] [--json]
 # GUI
 python run_gui.py
 # testler
-python -m pytest -q      # 623 test (CI: 3.11–3.14 Linux + 3.12 Windows)
+python -m pytest -q      # 707 test (CI: 3.11–3.14 Linux + 3.12 Windows)
 ```
 
 ## Mimari
@@ -134,7 +134,10 @@ python -m pytest -q      # 623 test (CI: 3.11–3.14 Linux + 3.12 Windows)
   nesneleri değiştirilmez). `config` modülünü import etmez — nesne duck-typed.
 - `detector/bench.py` — etiketli korpus → `Case`/`Metrics`/`BenchResult`;
   precision/recall/F1/FP-oranı, eşik taraması (`medium|high|critical`), FP/FN
-  listesi (her biri sert gösterge id'leriyle). Etiket kaynağı: `labels.csv`
+  listesi (her biri sert gösterge id'leriyle). `BenchResult.indicator_stats()`
+  = **gösterge kırılımı**: id başına kaç phish / kaç ham mailde ateşlendi (mail
+  başına bir kez; `Case.all_ids`, `soft_ids` koşunun kullandığı küme), en çok
+  ham vuran üstte; düz metin raporda tablo, `--json`'da `indicators`. Etiket kaynağı: `labels.csv`
   (`file,label`) **veya** `phish/` + `ham/` alt klasörleri.
 - `detector/iocs.py` — `collect(email) -> IOCSet` (urls/domains/ips/emails/
   attachments+sha256) + `defang()`. HTML'de **yalnız attribute içindeki** URL'ler
@@ -172,11 +175,12 @@ python -m pytest -q      # 623 test (CI: 3.11–3.14 Linux + 3.12 Windows)
 
 | Modül | Ne bakar | Not |
 |-------|----------|-----|
-| `checks/headers.py` | SPF/DKIM/DMARC özeti (**güven sınırı**, aşağıda), from↔reply/return-path uyuşmazlığı, `display_name_spoof`, `msg_no_transport_headers`, `auth_results_conflict`, `auth_claim_unverifiable`, `alignment()` → `auth_pass_unaligned`, `brand_domain_spoof` / `brand_domain_unverified` | online: `no_spf_record` |
+| `checks/headers.py` | SPF/DKIM/DMARC özeti (**güven sınırı**, aşağıda), from↔reply/return-path uyuşmazlığı, `display_name_spoof`, `msg_no_transport_headers`, `auth_results_conflict`, `auth_claim_unverifiable`, `alignment()` → `auth_pass_unaligned`, `brand_domain_spoof` / `brand_domain_unverified`, `multiple_from_headers` (sert 14; iki From + **farklı** adres) | online: `no_spf_record` |
 | `checks/auth_verify.py` | **Tier 1** kripto: DKIM imza doğrulama, canlı SPF, DMARC politikası, Received/IP adli | online-gated (Received adli offline) |
-| `checks/urls.py` | `anchor_href_mismatch` (first-party farkında), `ip_url`, punycode/homograph, shortener, suspicious_tld, `lookalike_domain` | `ip_url` gizli yazımları da tanır (`util.canonical_ip`: ondalık/hex/sekizlik/IPv6) |
-| `checks/url_deep.py` | **Tier 2**: `open_redirect`, `combosquat_domain`, `brand_in_subdomain`, `confusable_brand` (IDN), `random_host` (DGA) | first-party farkında |
-| `checks/content.py` | `urgency_language`, `credential_request`, `generic_greeting`, `brand_impersonation` | brand_imp **kimlik-temelli** (aşağıda) |
+| `checks/urls.py` | `anchor_href_mismatch` (first-party farkında), `ip_url`, punycode/homograph, shortener, suspicious_tld, `lookalike_domain`, `free_hosting_url` (yumuşak 8; host `free_hosting.txt` soneklerinden birinin **alt alanı**, first-party hariç) | `ip_url` gizli yazımları da tanır (`util.canonical_ip`: ondalık/hex/sekizlik/IPv6) |
+| `checks/url_deep.py` | **Tier 2**: `open_redirect`, `combosquat_domain`, `brand_in_subdomain`, `confusable_brand` (IDN), `random_host` (DGA), `brand_in_path` (yumuşak 10; marka domaini başka host'un **yolunda**, sorgu dizgisi `open_redirect`'e kalır) | first-party farkında |
+| `checks/content.py` | `urgency_language`, `credential_request`, `generic_greeting`, `brand_impersonation` | brand_imp **kimlik-temelli** (aşağıda). Kelimeler ham HTML **+** `util.visible_text()` üzerinde aranır (`pass<span></span>word`, sıfır-genişlik bölme) |
+| `checks/social.py` | **Yüksüz** sosyal mühendislik: `callback_phishing` (sert 14), `bec_request` (sert 14), `bank_change_request` (sert 12; auth pass → 6), `vip_impersonation` (sert 18), `fake_reply_subject` (yumuşak 6) | her bulgu **birleşim** (aşağıda); desenler `ascii_fold` edilmiş görünen metne yazılı |
 | `checks/html_forensics.py` | **Tier 2**: harici form POST (`formaction` dahil), parola alanı, meta-refresh, `<base>`, gizli iframe, gizli metin, obfuscated JS, `active_content_link` (`javascript:`/`vbscript:`/`data:` href; `void(0)` ve `data:image` hariç) | stdlib |
 | `checks/attachments.py` | `double_extension`, `dangerous_attachment`, `macro_document`, arşiv, MIME uyuşmazlığı, `disguised_executable` (sert: içerik exe, ad değil), `content_extension_mismatch` (yumuşak, `CONTENT_EXPECT`) | ad + MIME + içerik imzası (`filetype.sniff`); bayt/MIME aynı eki yalanlıyorsa **tek** bulgu |
 | `checks/attachment_deep.py` | **Tier 2**: `html_smuggling`, `macro_detected/autoexec`, `pdf_active_content`, `pdf_launch_action`, HTML/SVG ek = sayfa (`_page`): `html_attachment_form` (sert 16) **ya da** `html_attachment_script` (sert 14); ZIP dizini: `archive_dangerous_member` (sert 18; `DANGEROUS` − sayfa uzantıları + disk imajları), `archive_encrypted` (yumuşak 8, taşıyıcı); OOXML: `remote_template` (sert 18; `attachedTemplate`/`oleObject`/`frame`/`subDocument` + **uzak** hedef — Word'ün yerel `file:///C:/…` şablon kaydı değil); PDF adları `/ObjStm` içinde de aranır | içeriğe göre; oletools opsiyonel. Sayfa okuması `html_forensics.scan()` ile; dosya başına **tek** bulgu (form kazanır) — meşru "güvenli mesaj" HTML ekleri critical'a çıkmasın |
@@ -210,12 +214,13 @@ Düz toplam DEĞİL. `detector/scoring.py`:
    override'ı bu indirimi ezer.
 8. **Taşıyıcı sinyal yığını** (`reason = soft_stack`) — yumuşak sinyalin tek
    başına `medium` edebildiği tek yol, daha yukarı asla. `scoring.STACK_IDS`
-   (kısaltıcı, şüpheli TLD, punycode, `@`, tld-swap, makrolu belge, MIME
-   uyuşmazlığı, QR, meta-refresh, `<base>`, gizli iframe, obfuscated JS):
+   (kısaltıcı, şüpheli TLD, punycode, `@`, tld-swap, ücretsiz barındırma,
+   yolda marka domaini, makrolu belge, MIME/içerik uyuşmazlığı, şifreli arşiv,
+   QR, meta-refresh, `<base>`, gizli iframe, obfuscated JS):
    `auth_level != "pass"` + en az `soft_stack_min` = 2 **farklı** id + çarpanlı
-   toplam ≥ `soft_stack` = 15. Ton (aciliyet/hitap), tracker gürültüsü
+   toplam ≥ `soft_stack` = 15. Ton (aciliyet/hitap, `fake_reply_subject`), tracker gürültüsü
    (`open_redirect`/`random_host`/`excessive_subdomains`), `hidden_text`,
-   arşiv ve **tüm auth-kategorisi notlar bilerek dışarıda**: A-R'siz meşru ESP
+   düz arşiv ve **tüm auth-kategorisi notlar bilerek dışarıda**: A-R'siz meşru ESP
    bülteni bunlardan phishing kadar puan toplar, puan eşiği ayıramaz.
    Merdivende `soft_pileup`'tan sonra gelir, "sert == 0" şartı yok (zayıf sert
    iz + yığın, yığından düşük çıkmasın); config ile sert'e taşınan id tam
@@ -284,6 +289,31 @@ uzunluğuna göre ölçekler (`fb.com`'a 2 mesafe = internetin yarısı).
 veya From adresinde** geçip domain markanın resmi domaini değilse ateşler
 (kelime-sınırlı). Gövdede marka *anmak* tetiklemez — meşru mail sürekli marka anar.
 
+**Yüksüz sosyal mühendislik** (`checks/social.py`, `tests/test_social.py` iki
+taraftan sınar): link/ek/sahte başlık taşımayan mailler. Kelime tek başına
+kanıt değil → her bulgu **birleşim**: ifade + talebin biçimi + göndereni kimin
+doğruladığı. Okunan metin = konu + düz gövde + `util.visible_text(html)`.
+- `callback_phishing`: `_AMOUNT` + `_CHARGE` + `_DISPUTE` + telefon (`_phones`:
+  10–13 hane ya da 444'lü 7 hane; ayraçsız rakam dizisi ve tarih elenir) +
+  numaranın çevresinde (−160/+80 karakter) `_CALL` + (From `headers.FREEMAIL`
+  **ya da** metin bir markayı anıyor ve From o markanın domaini değil; marka
+  koşulu `auth_level == "pass"` iken sayılmaz).
+- `bec_request`: `_MONEY` + `_PRETEXT` + görünen metin ≤ `_BEC_MAX_CHARS` (1500)
+  + (From freemail **ya da** Reply-To başka kayıtlı domain).
+- `bank_change_request`: `_BANK_CHANGE` ("değişti/güncellendi" şart; yalın
+  "yeni" + sipariş cümlesi değil). Auth pass → 6, değilse 12.
+- `vip_impersonation`: From görünen adının `util.skeleton()` token'ları
+  `vip_names.txt`'deki bir adın **tüm** token'larını içeriyor (≥ 2 kelime) ve
+  From kayıtlı domaini `own_domains.txt`'de değil.
+- `fake_reply_subject`: konu `re|ynt|yanit|cevap|aw|sv:` + `In-Reply-To` ve
+  `References` yok; `.msg`/mapi hariç.
+
+**Kurum koruması**: `build_context` `own_domains.txt`'deki her domaini
+`brands` sözlüğüne ekler (anahtar = ilk etiket) → lookalike/combosquat/tld-swap
+ve `brand_domain_spoof` kendiliğinden kurum domainini de korur. ctx anahtarları:
+`own_domains` (set), `vip_names` (sıralı liste), `free_hosting` (set). İki
+kurum dosyası **boş gelir**; boşken çıktı birebir eskisi gibidir.
+
 ## Veri dosyaları (`detector/data/`, kullanıcı düzenleyebilir)
 
 Sözlükler **paket içinde** (wheel'e girer, `phishingtool` her dizinden bulur).
@@ -295,6 +325,10 @@ Sözlükler **paket içinde** (wheel'e girer, `phishingtool` her dizinden bulur)
 - `trusted_domains.txt` — güvenilen gönderen allowlist'i
 - `lure_words.txt` — combosquat tuzak kelimeleri (ctx `lure_words`); özel
   `--data-dir`'de yoksa `build_context` paket içi listeye düşer
+- `free_hosting.txt` — ücretsiz barındırma/tünel/dinamik DNS sonekleri (ctx
+  `free_hosting`); `lure_words` gibi paket içi listeye düşer
+- `own_domains.txt` — kurumun kendi domainleri (boş gelir; doldurulunca marka
+  gibi korunur) · `vip_names.txt` — satır başına AD SOYAD (boş gelir)
 
 **Skorlama ayarı ayrı** (`--config config.toml`, `PHISHINGTOOL_CONFIG`): sözlük
 değil politika. Şablon repo kökünde `config.example.toml`; şema ve kurallar
@@ -310,7 +344,10 @@ değil politika. Şablon repo kökünde `config.example.toml`; şema ve kurallar
 - **Tier 2** (saldırı vektörleri: html_forensics, attachment_deep, qr, url_deep) — **DONE**
 - **Tier 3** — precision/recall **benchmark harness DONE** (`detector/bench.py`,
   `bench` komutu). ML sınıflandırıcı + Ollama yerel LLM hâlâ PENDING; ölçüm artık
-  var, bir sonraki değişiklik F1 ile doğrulanabilir.
+  var, bir sonraki değişiklik F1 ile doğrulanabilir. `bench` gösterge bazlı
+  kırılım da verir (hangi sinyal ham'de ateşleniyor).
+- **Yüksüz sosyal mühendislik + kurum koruması** — **DONE** (`checks/social.py`,
+  `own_domains.txt`/`vip_names.txt`/`free_hosting.txt`; çevrimdışı).
 - **Tier 4** — **pyproject + `phishingtool` konsol komutu + GitHub Actions CI DONE**
   (`pyproject.toml`, `.github/workflows/ci.yml`; sözlükler pakete taşındı,
   `--data-dir`/`PHISHINGTOOL_DATA` override'ı eklendi; **TOML config DONE**,

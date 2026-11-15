@@ -135,6 +135,14 @@ def run(email, online=False, ctx=None):
                         "Unicode/IDN homoglyph ile marka domaini taklit ediliyor."))
                     break
 
+    # Every brand domain in one alternation, longest first so "paypal.com.tr"
+    # is not cut short at "paypal.com".
+    owner = {d: domains for domains in brands.values() for d in domains}
+    in_path = re.compile(
+        r"(?:^|[/.@_-])(" + "|".join(re.escape(d) for d in
+                                     sorted(owner, key=len, reverse=True))
+        + r")(?=[/._-]|$)") if owner else None
+
     def parts(host):
         rdom = registered_domain(host)
         sld = rdom.split(".")[0] if rdom else host
@@ -165,6 +173,22 @@ def run(email, online=False, ctx=None):
                     break
 
         brand_checks(host, rdom, sld, sub, where)
+
+        # --- a brand's domain written into the PATH of somebody else's host ---
+        # evil.example/paypal.com/login: the eye finds "paypal.com" in the
+        # address and stops reading. Query strings are left to open_redirect.
+        if in_path and not first_party:
+            try:
+                path = urlparse(href).path.lower()
+            except Exception:
+                path = ""
+            m = in_path.search(path)
+            if m and rdom not in owner[m.group(1)]:
+                add(Indicator("brand_in_path", "url", "medium", 10,
+                    where + "'" + m.group(1) + "' adresin yolunda geciyor, gercek host: " + host,
+                    "Marka domaini URL'nin yol kismina yazilmis; baglantinin gittigi "
+                    "yer bastaki host'tur. Arsiv/onbellek servisleri de boyle adres "
+                    "uretir, bu yuzden tek basina kanit degildir."))
 
         # --- DGA / random-looking host label ---
         # The digit cap keeps numeric infrastructure labels (cdn-000123456789,

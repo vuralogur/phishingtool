@@ -1,0 +1,16 @@
+# Adina sahte mail atilmasi en olasi kisiler (genel mudur, CFO, muhasebe
+# muduru...) — satir basina bir AD SOYAD.
+#
+# Gonderenin gorunen adi bu adlardan birini tasiyor ama adresi own_domains.txt
+# icindeki domainlerden birinde DEGILSE `vip_impersonation` (sert) cikar:
+# "Ahmet Yilmaz <ahmet.yilmaz.ofis@gmail.com>" klasik CEO dolandiriciligidir.
+#
+# - En az iki kelime yazin; tek kelimelik satirlar yok sayilir ("Ahmet" her
+#   Ahmet'i vururdu).
+# - Buyuk/kucuk harf ve Turkce karakter farki onemsizdir (Yılmaz = YILMAZ = yilmaz);
+#   Kiril/benzer harflerle yazilmis adlar da yakalanir.
+# - Bu kisi kisisel adresinden de yaziyorsa o mailler de isaretlenir — amac bu.
+#
+# ornek:
+# Ahmet Yilmaz
+# Ayse Demir

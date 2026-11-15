@@ -41,9 +41,12 @@ NAMES = {
     "T1566": "Phishing",
     "T1566.001": "Phishing: Spearphishing Attachment",
     "T1566.002": "Phishing: Spearphishing Link",
+    "T1566.004": "Phishing: Spearphishing Voice",
     "T1583.001": "Acquire Infrastructure: Domains",
+    "T1583.006": "Acquire Infrastructure: Web Services",
     "T1598": "Phishing for Information",
     "T1656": "Impersonation",
+    "T1657": "Financial Theft",
 }
 
 # Indicator id -> technique id.
@@ -62,6 +65,13 @@ TECHNIQUES = {
     "display_name_spoof": "T1656",
     "brand_impersonation": "T1656",
     "brand_domain_spoof": "T1656",
+    "multiple_from_headers": "T1656",
+    "vip_impersonation": "T1656",
+
+    # No payload: the mail asks for a phone call, or for money.
+    "callback_phishing": "T1566.004",
+    "bec_request": "T1657",
+    "bank_change_request": "T1657",
 
     # Attacker-registered domains: typosquats, homoglyphs, throwaway hosts.
     # ATT&CK lists exactly this tradecraft under Acquire Infrastructure: Domains.
@@ -75,6 +85,10 @@ TECHNIQUES = {
     "excessive_subdomains": "T1583.001",
     "random_host": "T1583.001",
     "tld_swap_domain": "T1583.001",
+    # Somebody else's free hosting / tunnel instead of a registered domain.
+    "free_hosting_url": "T1583.006",
+    # The brand's domain shown in the path of an unrelated host.
+    "brand_in_path": "T1036",
 
     # The link itself is the delivery vehicle (QR = the same link, hidden in
     # an image so text-layer filters never see it).
@@ -106,6 +120,7 @@ TECHNIQUES = {
     # Social-engineering pretext - the phishing lure itself, no sub-technique.
     "urgency_language": "T1566",
     "generic_greeting": "T1566",
+    "fake_reply_subject": "T1566",
 
     # The attachment is the delivery vehicle.
     "dangerous_attachment": "T1566.001",

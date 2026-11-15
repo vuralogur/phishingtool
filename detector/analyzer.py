@@ -8,7 +8,7 @@ from . import parser as _parser
 from . import reputation
 from .checks import (
     headers, urls, content, attachments, auth_verify,
-    html_forensics, attachment_deep, qr, url_deep,
+    html_forensics, attachment_deep, qr, url_deep, social,
 )
 from .scoring import score, auth_level
 from .util import registered_domain
@@ -65,8 +65,21 @@ def build_context(data_dir=None, config=None) -> dict:
     scoring the whole batch with defaults nobody asked for.
     """
     d = resolve_data_dir(data_dir)
+    brands = _load_brands(d / "brands.txt")
+    # The organisation's own domains are protected exactly like a brand's: a
+    # look-alike of them, or an unauthenticated mail claiming to come from them,
+    # is caught by the checks that already exist. Empty file = nothing changes.
+    own = _load_set(d / "own_domains.txt")
+    for domain in own:
+        brands.setdefault(domain.split(".")[0], set()).add(domain)
     return {
-        "brands": _load_brands(d / "brands.txt"),
+        "brands": brands,
+        "own_domains": own,
+        "vip_names": sorted(_load_set(d / "vip_names.txt")),
+        # Like lure_words below: a custom --data-dir without the file falls back
+        # to the bundled list instead of silently switching the check off.
+        "free_hosting": (_load_set(d / "free_hosting.txt")
+                         or _load_set(_DATA / "free_hosting.txt")),
         "suspicious_tlds": _load_set(d / "suspicious_tlds.txt"),
         "urgency": sorted(_load_set(d / "urgency_keywords.txt")),
         "allowlist": _load_set(d / "trusted_domains.txt"),
@@ -106,6 +119,7 @@ def analyze(email, online=False, ctx=None):
     indicators += urls.run(email, online, ctx)
     indicators += url_deep.run(email, online, ctx)
     indicators += content.run(email, online, ctx)
+    indicators += social.run(email, online, ctx)
     indicators += html_forensics.run(email, online, ctx)
     indicators += attachments.run(email, online, ctx)
     indicators += attachment_deep.run(email, online, ctx)

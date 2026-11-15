@@ -1,0 +1,19 @@
+# Kurumunuzun kendi e-posta domainleri — satir basina bir domain, kucuk harf.
+#
+# Bos birakilirsa hicbir sey degismez. Doldurulursa bu domainler bir "marka"
+# gibi korunur (detector/analyzer.py build_context, brands sozlugune eklenir):
+#
+#   - benzeri gonderen/link domaini        -> lookalike_domain, combosquat_domain,
+#                                             tld_swap_domain
+#   - kendi domaininizden geliyor gorunen
+#     ama dogrulanmamis mail               -> brand_domain_spoof
+#   - vip_names.txt'deki bir ad bu
+#     domainlerin DISINDAN geliyorsa       -> vip_impersonation
+#
+# Marka adi olarak domainin ilk etiketi kullanilir (sirketim.com.tr -> "sirketim").
+# 4 harften kisa adlar gonderen adinda tesadufen gecebilir; o durumda
+# brand_impersonation yanlis alarm verirse domaini buradan cikarin.
+#
+# ornek:
+# sirketim.com.tr
+# sirketim.com

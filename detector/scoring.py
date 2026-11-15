@@ -44,6 +44,11 @@ SOFT_IDS = {
     # Same name under another ending: a squat, or the brand's own side domain.
     # Generic-word names (apple, amazon, turkiye) make it too noisy to stand alone.
     "tld_swap_domain",
+    # Free hosting and a brand domain in a URL path: how throwaway phishing
+    # pages are addressed - and how small projects and web archives are too.
+    "free_hosting_url", "brand_in_path",
+    # A "RE:" on a mail that replies to nothing; some clients drop the headers.
+    "fake_reply_subject",
     # attachment "capability" (not confirmed malicious)
     "archive_attachment", "macro_document", "mime_extension_mismatch",
     "pdf_embedded_file",
@@ -108,7 +113,7 @@ THRESHOLDS = {
 # it again as evidence would use the same fact twice.
 STACK_IDS = frozenset({
     "url_shortener", "suspicious_tld", "punycode_domain", "at_in_url",
-    "tld_swap_domain",
+    "tld_swap_domain", "free_hosting_url", "brand_in_path",
     "macro_document", "mime_extension_mismatch", "content_extension_mismatch",
     "archive_encrypted", "qr_code_url",
     "meta_refresh_redirect", "base_tag_href", "hidden_iframe",

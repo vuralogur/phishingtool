@@ -274,10 +274,28 @@ Esik taramasi:
   critical   100.0%     100.0%     100.0%     0
 ```
 
-Üç şey kazandırır:
+Ardından **gösterge kırılımı** gelir — her göstergenin kaç phishing ve kaç meşru
+mailde ateşlendiği (mail başına bir kez sayılır, en çok meşru mail vuran üstte):
+
+```
+Gosterge kirilimi (kac mailde ateslendi; en cok ham vuran ustte):
+  gosterge                      tur      phish          ham
+  anchor_href_mismatch          sert     2 (100.0%)     0 (0.0%)
+  credential_request            sert     2 (100.0%)     0 (0.0%)
+  urgency_language              yumusak  2 (100.0%)     0 (0.0%)
+  combosquat_domain             sert     1 (50.0%)      0 (0.0%)
+  ...
+```
+
+Dört şey kazandırır:
 
 - **Eşik taraması** — aynı koşuyu `medium/high/critical` için puanlar; eşiği
   tahminle değil ölçümle seçersin.
+- **Gösterge kırılımı** — verdict metrikleri modelin *bir yerde* yanıldığını
+  söyler, bu tablo *hangi sinyale* bakılacağını. Meşru mailde phishing kadar sık
+  ateşlenen gösterge hiçbir ağırlıkta bilgi taşımaz; ham oranı yüksek **sert**
+  gösterge yanlış pozitifin ilk aranacağı yerdir. `--json` çıktısında
+  `indicators` listesi (`id`, `kind`, `phish`, `ham`, `phish_rate`, `ham_rate`).
 - **Hata listesi** — her yanlış pozitif/negatif için dosya adı, verdict, skor ve
   **tetikleyen sert göstergeler**; düzeltilecek kuralı doğrudan gösterir.
 - **Regresyon koruması** — ağırlık değiştirdikten sonra tekrar çalıştır; F1
@@ -341,8 +359,9 @@ Aşağıdaki **taşıyıcı** sinyaller farklıdır — mailin nereye götürdü
 taşıdığını anlatır ve sıradan posta altyapısı bunları üretmez:
 
 `url_shortener`, `suspicious_tld`, `punycode_domain`, `at_in_url`,
-`tld_swap_domain`, `macro_document`, `mime_extension_mismatch`,
-`content_extension_mismatch`, `archive_encrypted`, `qr_code_url`,
+`tld_swap_domain`, `free_hosting_url`, `brand_in_path`, `macro_document`,
+`mime_extension_mismatch`, `content_extension_mismatch`, `archive_encrypted`,
+`qr_code_url`,
 `meta_refresh_redirect`, `base_tag_href`, `hidden_iframe`, `obfuscated_script`
 
 Kural: gönderen **DMARC pass değilse** ve en az **2 farklı** taşıyıcı sinyal
@@ -387,7 +406,13 @@ tracker'ı) `anchor_href_mismatch`, `open_redirect`, `random_host` ateşlenmez.
 **Başlık / kimlik doğrulama** — `spf_fail`/`spf_softfail`, `dkim_fail`, `dmarc_fail`,
 `from_replyto_mismatch`, `from_returnpath_mismatch`, `display_name_spoof`,
 `auth_claim_unverifiable`, `auth_results_conflict`, `auth_pass_unaligned`,
-`brand_domain_spoof`, `brand_domain_unverified`, (online) `no_spf_record`.
+`brand_domain_spoof`, `brand_domain_unverified`, `multiple_from_headers`,
+(online) `no_spf_record`.
+
+**Birden fazla From:** RFC 5322 tek bir `From` başlığına izin verir. İki tane
+ve **farklı adresli** ise doğrulamayı yapan sunucu birini, postayı gösteren
+istemci diğerini okuyabilir — `multiple_from_headers` (sert). Aynı adresin iki
+kez yazılması bulgu değildir; analiz ilk başlığa göre yapılır.
 
 **Güven sınırı:** SPF/DKIM/DMARC sonucu **yalnızca en üstteki**
 `Authentication-Results` başlığından okunur — başlıklar yukarı eklendiği için
@@ -415,7 +440,14 @@ istediği gibi yazabilir. Dosyada hiç `Authentication-Results` yoksa yalnız
 
 **URL / bağlantı** — `anchor_href_mismatch`, `ip_url`, `punycode_domain`,
 `homograph_domain`, `at_in_url`, `url_shortener`, `suspicious_tld`,
-`excessive_subdomains`, `lookalike_domain`, `tld_swap_domain` (yumuşak).
+`excessive_subdomains`, `lookalike_domain`, `tld_swap_domain` (yumuşak),
+`free_hosting_url` (yumuşak).
+
+`free_hosting_url`: link, herkesin dakikalar içinde ve kimlik göstermeden sayfa
+açabildiği bir barındırma / tünel / dinamik DNS servisinin **alt alanında**
+(`x.pages.dev`, `abc.ngrok-free.app`). Meşru küçük projeler de kullanır, bu
+yüzden yumuşak ve taşıyıcı sinyaldir; gönderenin kendi domaini aynı adresse
+ateşlenmez. Liste `free_hosting.txt` içinde.
 
 Domain kontrolleri (lookalike, combosquat, subdomain'e gömülü marka, homoglyph,
 şüpheli TLD) yalnız linklere değil **gönderenin kendi domainine** (From ve
@@ -439,6 +471,42 @@ hex (`0xC0A80101`), sekizlik ve IPv6 — kanıt satırı gerçek adresi gösteri
 de karşılaştırır: Kiril/Yunan benzer harfler ("PаyPal"), sıfır-genişlik
 karakterler ve tam-genişlik/matematiksel harfler Latin'e katlanır
 (`util.skeleton`); böyle yazılmış ad kanıt satırında ayrıca belirtilir.
+
+Anahtar kelimeler ham HTML'de **ve okuyucunun gördüğü metinde** aranır
+(`util.visible_text`): `pass<span></span>word` ya da araya sıfır-genişlik
+karakter konmuş `numa&#8203;ranızı` ham işaretlemede hiçbir kelime içermez, ekranda
+ise düz okunur — tam da bu yüzden öyle yazılır.
+
+**Sosyal mühendislik** (`checks/social.py`) — link de ek de taşımayan mailler.
+"Yük" aranacak bir telefon numarası ya da uyulacak bir talimattır; diğer bütün
+kontroller bir *şey* aradığı için bunlar bulgusuz geçiyordu. Kelime tek başına
+kanıt değildir (dürüst fatura da telefon numarası yazar, dürüst müdür de ödeme
+ister); her bulgu bir **birleşimdir**: ifade + talebin biçimi + göndereni kimin
+doğruladığı.
+
+- `callback_phishing` (sert) — geri-arama dolandırıcılığı: tutar + ücret/yenileme
+  bildirimi + "iptal/iade için" + **yanında "arayın" yazan** bir telefon
+  numarası; gönderen ücretsiz posta adresi ya da mail bir markayı anıp o markanın
+  domaininden gelmiyor. Gönderen DMARC pass ise marka koşulu sayılmaz.
+- `bec_request` (sert) — yönetici/iş ortağı taklidi (BEC): ödeme talebi
+  ("havale", "wire transfer", "hediye kartı") + bahane ("toplantıdayım",
+  "arayamam", "aramızda kalsın") + **kısa** not (≤ 1500 karakter) + gönderen
+  ücretsiz posta adresi ya da Reply-To başka domain.
+- `bank_change_request` (sert) — "banka/hesap bilgilerimiz değişti" bildirimi:
+  fatura gerçektir, hesap numarası değildir. Doğrulanmamış gönderende 12,
+  DMARC pass gönderende 6 puan (tek başına verdict taşıyamaz).
+- `vip_impersonation` (sert) — görünen ad `vip_names.txt`'deki bir yöneticinin
+  adı, adres `own_domains.txt`'deki kurum domainlerinin **dışında**
+  ("Ahmet Yılmaz <ahmet.yilmaz.ofis@gmail.com>"). İki dosya da boş gelir;
+  doldurulmadıkça kontrol hiçbir şey üretmez.
+- `fake_reply_subject` (yumuşak) — konu `RE:` / `YNT:` ile başlıyor ama
+  `In-Reply-To` / `References` yok: mail hiçbir mesaja yanıt değil. Bazı
+  istemciler bu başlıkları siler; tek başına kanıt değildir.
+
+**Kurum koruması:** `own_domains.txt`'e yazdığınız domainler bir marka gibi
+korunur — benzeri gönderen/link domaini `lookalike_domain` / `combosquat_domain`
+/ `tld_swap_domain`, kendi domaininizden geliyor görünen doğrulanmamış mail
+`brand_domain_spoof` üretir. Dosya boşken hiçbir şey değişmez.
 
 **Ek** — `dangerous_attachment`, `double_extension`, `macro_document`,
 `archive_attachment`, `mime_extension_mismatch`, `disguised_executable`,
@@ -507,7 +575,11 @@ geldiğini yazar: `Ek 'fatura.pdf' icindeki link - paypa1.com ~ paypal.com`.
 (OpenCV veya pyzbar backend'i kuruluysa).
 
 **URL derin (Tier 2)** — `open_redirect`, `combosquat_domain`,
-`brand_in_subdomain`, `confusable_brand` (IDN homoglyph), `random_host` (DGA).
+`brand_in_subdomain`, `confusable_brand` (IDN homoglyph), `random_host` (DGA),
+`brand_in_path` (yumuşak). `brand_in_path`: marka domaini başkasının host'unun
+**yoluna** yazılmış (`evil.example/paypal.com/login`) — göz adreste `paypal.com`'u
+bulur ve okumayı bırakır. Arşiv/önbellek servisleri de böyle adres ürettiği için
+yumuşak ve taşıyıcı sinyaldir; sorgu dizgisi `open_redirect`'e bırakılır.
 `combosquat_domain` "marka + **tuzak kelime**" arar (`paypal-secure`,
 `garantibbva-destek`, `akbankgiris`); markanın kendi altyapısı (`googleapis`,
 `amazonaws`, `paypalobjects`) ve içinde marka geçen sıradan kelimeler
@@ -523,6 +595,13 @@ Sözlükler `detector/data/` altında düz metin — kod değiştirmeden genişl
 - `detector/data/trusted_domains.txt` — güvenilen gönderen allowlist'i
 - `detector/data/lure_words.txt` — combosquat tuzak kelimeleri (login, secure,
   destek, giris…); `--data-dir` klasöründe yoksa paket içindeki liste kullanılır
+- `detector/data/free_hosting.txt` — ücretsiz barındırma / tünel / dinamik DNS
+  sonekleri (`pages.dev`, `ngrok-free.app`…); `--data-dir` klasöründe yoksa
+  paket içindeki liste kullanılır
+- `detector/data/own_domains.txt` — **kurumunuzun kendi domainleri** (boş gelir);
+  doldurulunca marka gibi korunur
+- `detector/data/vip_names.txt` — adına sahte mail atılması en olası kişiler,
+  satır başına bir AD SOYAD (boş gelir; tek kelimelik satırlar yok sayılır)
 
 Karşılaştırmalar **ASCII'ye katlanır** (`util.ascii_fold`): `str.lower()` "I"
 harfini "ı"ya çeviremediği için "VAKIFBANK" yazan bir mail "vakıfbank" satırıyla
@@ -600,7 +679,7 @@ seçenekler ve açıklamaları: [`config.example.toml`](config.example.toml).
 ## Testler
 
 ```bash
-python -m pytest -q      # 623 test
+python -m pytest -q      # 707 test
 ```
 
 Her push ve PR'da GitHub Actions bunları çalıştırır: **opsiyonel bağımlılık
@@ -619,7 +698,7 @@ detector/
   analyzer.py     # orkestratör: parse -> tüm kontroller -> skor
   parser.py       # .eml / .msg / ham metin -> normalize ParsedEmail
   msg.py          # Outlook .msg (OLE2/CFB + MAPI) okuyucu — saf stdlib
-  checks/         # headers, urls, content, attachments
+  checks/         # headers, urls, content, social, attachments, html_forensics…
   indicators.py   # Indicator (kanıt birimi) + otomatik ATT&CK etiketi
   mitre.py        # gösterge -> MITRE ATT&CK tekniği eşlemesi
   scoring.py      # ağırlıklı, açıklanabilir skor -> verdict + skor kırılımı

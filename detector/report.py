@@ -313,6 +313,19 @@ def _bench_plain(bench, source=None, limit=10) -> str:
         lines.append("  " + t.ljust(11) + _pct(sm.precision).ljust(11) +
                      _pct(sm.recall).ljust(11) + _pct(sm.f1).ljust(11) + str(sm.fp))
 
+    stats = bench.indicator_stats() if hasattr(bench, "indicator_stats") else []
+    if stats:
+        lines.append("")
+        lines.append("Gosterge kirilimi (kac mailde ateslendi; en cok ham vuran ustte):")
+        lines.append("  " + "gosterge".ljust(30) + "tur".ljust(9) +
+                     "phish".ljust(15) + "ham")
+        for row in stats:
+            lines.append(
+                "  " + row["id"].ljust(30)
+                + ("yumusak" if row["kind"] == "soft" else "sert").ljust(9)
+                + (str(row["phish"]) + " (" + _pct(row["phish_rate"]).strip() + ")").ljust(15)
+                + str(row["ham"]) + " (" + _pct(row["ham_rate"]).strip() + ")")
+
     for kind, title in (("FP", "Yanlis pozitif (mesru ama flaglandi)"),
                         ("FN", "Yanlis negatif (phishing ama kacti)")):
         rows = bench.failures(kind)

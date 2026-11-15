@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 from ..indicators import Indicator
-from ..util import ascii_fold, registered_domain, skeleton
+from ..util import ascii_fold, registered_domain, skeleton, visible_text
 
 # All three patterns below run against ascii_fold(text), never the raw body, so
 # they are written in the folded alphabet: "sifre" matches ŞİFRE, Şifre and
@@ -42,7 +42,11 @@ def run(email, online=False, ctx=None):
     brands = ctx.get("brands", {})
     out = []
 
-    blob = (email.subject or "") + "\n" + (email.text_body or "") + "\n" + (email.html_body or "")
+    # The raw HTML AND the text it renders to. "pass<span></span>word" and
+    # "numa&#8203;raniz" contain no keyword until the tags and zero-width
+    # characters are taken out - which is exactly why they are written that way.
+    blob = ((email.subject or "") + "\n" + (email.text_body or "") + "\n"
+            + (email.html_body or "") + "\n" + visible_text(email.html_body or ""))
     low = ascii_fold(blob)
 
     # Both sides folded: a dictionary written with "ı/ş/ğ" still matches a body

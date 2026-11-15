@@ -1,0 +1,58 @@
+# Herkesin dakikalar icinde, ucretsiz ve kimlik gostermeden sayfa acabildigi
+# barindirma / tunel / dinamik DNS / IPFS alan adlari — satir basina bir sonek.
+#
+# Bir link bu soneklerden biriyle bitiyorsa (x.pages.dev, abc.ngrok-free.app)
+# `free_hosting_url` (yumusak, tasiyici sinyal) cikar. Tek basina verdict
+# yukseltmez: bu servisleri mesru kucuk projeler de kullanir. Gonderenin kendi
+# domaini ayni sonekteyse (first-party) ateslenmez.
+#
+# Ana alan adinin kendisi (github.io, vercel.app) eslesmez, yalniz alt alanlari.
+
+# statik site / uygulama barindirma
+web.app
+firebaseapp.com
+pages.dev
+workers.dev
+r2.dev
+netlify.app
+vercel.app
+github.io
+gitlab.io
+glitch.me
+herokuapp.com
+onrender.com
+repl.co
+replit.app
+surge.sh
+webflow.io
+framer.website
+000webhostapp.com
+# site kuruculari
+weebly.com
+wixsite.com
+blogspot.com
+square.site
+godaddysites.com
+mystrikingly.com
+carrd.co
+bubbleapps.io
+# tuneller
+ngrok.io
+ngrok.app
+ngrok-free.app
+trycloudflare.com
+loca.lt
+serveo.net
+# dinamik DNS
+duckdns.org
+ddns.net
+hopto.org
+zapto.org
+sytes.net
+dynv6.net
+# IPFS ag gecitleri
+ipfs.io
+dweb.link
+cloudflare-ipfs.com
+nftstorage.link
+w3s.link

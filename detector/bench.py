@@ -55,6 +55,7 @@ class Case:
     verdict: str = ""   # low | medium | high | critical
     score: int = 0
     hard_ids: list = field(default_factory=list)   # signals that drove the verdict
+    all_ids: list = field(default_factory=list)    # every indicator, soft included
     error: str = ""     # non-empty -> file could not be analyzed
 
     def predicted(self, threshold: str) -> str:
@@ -128,6 +129,33 @@ class BenchResult:
     cases: list
     missing: list = field(default_factory=list)   # labelled but file not found
     unlabeled: list = field(default_factory=list)  # mail present, no label
+    soft_ids: frozenset = frozenset()              # the soft set the run scored with
+
+    def indicator_stats(self) -> list:
+        """Per indicator: how many phish and how many ham mails raised it.
+
+        The verdict metrics say THAT the model is wrong somewhere; this says
+        which signal to look at. An indicator that fires on ham as often as on
+        phish carries no information at any weight, and a hard one with a high
+        ham rate is the first place to look for false positives. Counted per
+        mail, not per occurrence. Worst offenders (most ham hits) first.
+        """
+        ok = [c for c in self.cases if not c.error]
+        totals = {PHISH: sum(1 for c in ok if c.label == PHISH),
+                  HAM: sum(1 for c in ok if c.label == HAM)}
+        counts = {}
+        for c in ok:
+            for id_ in set(c.all_ids):
+                counts.setdefault(id_, {PHISH: 0, HAM: 0})[c.label] += 1
+        rows = [{
+            "id": id_,
+            "kind": "soft" if id_ in self.soft_ids else "hard",
+            "phish": n[PHISH],
+            "ham": n[HAM],
+            "phish_rate": round(n[PHISH] / totals[PHISH], 4) if totals[PHISH] else 0.0,
+            "ham_rate": round(n[HAM] / totals[HAM], 4) if totals[HAM] else 0.0,
+        } for id_, n in counts.items()]
+        return sorted(rows, key=lambda r: (-r["ham"], -r["phish"], r["id"]))
 
     def metrics(self, threshold=None) -> Metrics:
         m = Metrics()
@@ -159,6 +187,7 @@ class BenchResult:
             "corpus_size": len(self.cases),
             "metrics": self.metrics().to_dict(),
             "sweep": {t: m.to_dict() for t, m in self.sweep()},
+            "indicators": self.indicator_stats(),
             "false_positives": [c.to_dict() for c in self.failures("FP")],
             "false_negatives": [c.to_dict() for c in self.failures("FN")],
             "errors": [c.to_dict() for c in self.errors],
@@ -260,6 +289,7 @@ def run(corpus_dir, labels=None, labels_path=None, threshold="medium",
             case.verdict = r.verdict
             case.score = r.score
             case.hard_ids = [i.id for i in r.indicators if i.id not in soft_ids]
+            case.all_ids = [i.id for i in r.indicators]
         except Exception as exc:  # a corrupt sample must not abort the whole run
             case.error = type(exc).__name__ + ": " + str(exc)
         cases.append(case)
@@ -272,4 +302,4 @@ def run(corpus_dir, labels=None, labels_path=None, threshold="medium",
         ) if rel not in labelled
     )
     return BenchResult(threshold=threshold, cases=cases, missing=missing,
-                       unlabeled=unlabeled)
+                       unlabeled=unlabeled, soft_ids=frozenset(soft_ids))

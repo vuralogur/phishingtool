@@ -53,6 +53,7 @@ def run(email, online=False, ctx=None):
     ctx = ctx or {}
     brands = ctx.get("brands", {})
     sus_tlds = ctx.get("suspicious_tlds", set())
+    free_hosting = ctx.get("free_hosting", ())
     out = []
     seen = set()
 
@@ -141,6 +142,13 @@ def run(email, online=False, ctx=None):
             add(Indicator("url_shortener", "url", "medium", 8,
                 where + "URL kisaltici: " + rdom,
                 "Kisaltici gercek hedefi gizler."))
+        suffix = next((s for s in free_hosting if host.endswith("." + s)), "")
+        if suffix and rdom != ctx.get("from_rdom", ""):
+            add(Indicator("free_hosting_url", "url", "medium", 8,
+                where + "Ucretsiz barindirma/tunel adresi: " + host + " (*." + suffix + ")",
+                "Bu servislerde herkes dakikalar icinde, kimlik gostermeden sayfa "
+                "acabilir. Mesru kucuk projeler de kullanir; kurumsal bir bildirimin "
+                "linki ise burada durmaz."))
         if host.count(".") >= 4:
             add(Indicator("excessive_subdomains", "url", "low", 6,
                 where + "Asiri subdomain: " + host,

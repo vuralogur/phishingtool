@@ -1,5 +1,6 @@
 """Shared helpers: domain parsing, IP detection, edit distance."""
 from __future__ import annotations
+import html as _html
 import ipaddress
 import re
 import unicodedata
@@ -127,6 +128,31 @@ _INVISIBLE = re.compile(
 def strip_invisible(s: str) -> str:
     """Drop characters that take up no space on screen (see ``_INVISIBLE``)."""
     return _INVISIBLE.sub("", s or "")
+
+
+_DROP_BLOCKS = re.compile(r"<(script|style|head|title)\b[^>]*>.*?</\1\s*>",
+                          re.IGNORECASE | re.DOTALL)
+_COMMENTS = re.compile(r"<!--.*?-->", re.DOTALL)
+_BREAK_TAGS = re.compile(
+    r"</?(?:br|p|div|tr|td|th|li|ul|ol|h[1-6]|table|blockquote|hr)\b[^>]*>",
+    re.IGNORECASE)
+_ANY_TAG = re.compile(r"<[^>]+>")
+
+
+def visible_text(markup: str) -> str:
+    """HTML as the reader sees it: one line of plain text.
+
+    Inline tags vanish without leaving a gap, so "pass<span></span>word" reads
+    "password" - splitting a keyword with empty tags or zero-width characters is
+    how a mail keeps its wording away from a search of the raw markup. Block
+    tags become spaces, entities are decoded, invisible characters dropped.
+    """
+    s = _DROP_BLOCKS.sub(" ", markup or "")
+    s = _COMMENTS.sub("", s)
+    s = _BREAK_TAGS.sub(" ", s)
+    s = _ANY_TAG.sub("", s)
+    s = strip_invisible(_html.unescape(s))
+    return re.sub(r"\s+", " ", s).strip()
 
 
 def link_origin(link) -> str:

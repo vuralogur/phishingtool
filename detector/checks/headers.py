@@ -1,6 +1,7 @@
 """Header / authentication checks: SPF/DKIM/DMARC, address mismatches, spoofing."""
 from __future__ import annotations
 import re
+from email.utils import parseaddr
 
 from ..indicators import Indicator
 from ..util import registered_domain, domain_of_address, looks_like_domain
@@ -196,6 +197,17 @@ def _conflict(stack) -> str:
 def run(email, online=False, ctx=None):
     out = []
     a = summary(email)
+
+    # RFC 5322 allows exactly one From. With two, the gateway that checked SPF/
+    # DMARC and the client that shows the sender may each pick a different one -
+    # and every check here, like the parser, has read only the first.
+    froms = (getattr(email, "headers", {}) or {}).get("from", [])
+    addresses = sorted({parseaddr(v)[1].lower() for v in froms} - {""})
+    if len(froms) > 1 and len(addresses) > 1:
+        out.append(Indicator("multiple_from_headers", "auth", "high", 14,
+            "Birden fazla From basligi: " + ", ".join(addresses[:4]),
+            "Mailde iki farkli gonderen yaziyor. Dogrulamayi yapan sunucu birini, "
+            "postayi gosteren istemci digerini okuyabilir; analiz ilkine gore yapildi."))
 
     if getattr(email, "header_source", "rfc822") == "mapi":
         # Outlook saved this .msg without PR_TRANSPORT_MESSAGE_HEADERS. Say so
