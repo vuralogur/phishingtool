@@ -1,6 +1,10 @@
 """Tier 2 - deep static inspection of attachment *content* (not just names).
 
-Four families, all static (files are never opened/executed):
+Six families, all static - nothing is executed, rendered, or written to disk;
+container STRUCTURE is read in memory under size caps (``detector.documents``):
+  * Archives        - a ZIP's file list: an executable inside, a password on it.
+  * Remote template - an OOXML document that loads a template/object from a
+    remote address the moment it is opened.
   * HTML smuggling  - an .html/.htm attachment that reconstructs a payload in
     the browser via base64 + Blob/msSaveOrOpenBlob/data: download.
   * Attached pages  - an HTML/SVG attachment read like the body is: a login
@@ -14,8 +18,11 @@ oletools is optional; everything else is stdlib byte scanning.
 from __future__ import annotations
 import re
 
+from .. import documents
 from ..indicators import Indicator
+from ..util import file_ext
 from . import html_forensics
+from .attachments import DANGEROUS
 
 _SMUGGLE_SIG = re.compile(
     rb"(msSaveOrOpenBlob|new\s+Blob\s*\(|createObjectURL|"
@@ -71,14 +78,19 @@ _SVG_ACTIVE = re.compile(
     r"<script\b|\son[a-z]+\s*=|javascript:|<iframe\b|<embed\b", re.IGNORECASE)
 
 
-def _text(data: bytes) -> str:
-    """Attachment bytes as markup text; a wrong guess only costs some accents."""
-    if data[:2] in (b"\xff\xfe", b"\xfe\xff"):
-        return data.decode("utf-16", "replace")
-    try:
-        return data.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        return data.decode("latin-1")
+# Inside an archive: what runs when double-clicked, plus disk images (a second
+# container whose contents lose the "downloaded from the internet" mark). Pages
+# are left out - a zip of saved web pages or HTML docs is ordinary.
+_PAGE_MEMBERS = {"html", "htm", "shtml", "xhtml", "xht", "mht", "mhtml", "svg"}
+_MEMBER_DANGEROUS = (DANGEROUS - _PAGE_MEMBERS) | {"iso", "img", "vhd", "vhdx"}
+
+# OOXML relationship kinds that make the document LOAD something when opened
+# (a hyperlink waits for a click; these do not).
+_AUTOLOAD_RELS = {"attachedtemplate", "oleobject", "frame", "subdocument"}
+# ...from somewhere that is not this machine. Word records the local template
+# of nearly every document as an "external" file:///C:/... target - not this.
+_REMOTE_TARGET = re.compile(
+    r"^(?:https?|ftp)://|^\\\\[^\\]|^file://[^/]|mhtml:|!x-usc:", re.IGNORECASE)
 
 
 def _page(att, data: bytes, is_svg: bool):
@@ -90,7 +102,7 @@ def _page(att, data: bytes, is_svg: bool):
     page that also redirects is one phishing page, not two pieces of evidence -
     and the form, being the more specific statement, wins.
     """
-    text = _text(data)
+    text = documents.markup_text(data)
     s = html_forensics.scan(text)
     posts = sorted({h for h in (html_forensics.host_of(a) for a in s.form_actions) if h})
     if s.has_password or posts:
@@ -168,6 +180,35 @@ def run(email, online=False, ctx=None):
             if page:
                 out.append(page)
 
+        # --- ZIP: what the archive says it holds (directory only) ---
+        members = documents.zip_members(data) if data[:2] == b"PK" else None
+        if members and not documents.is_office_package(members):
+            bad = [m.name.replace("\\", "/").rsplit("/", 1)[-1] for m in members
+                   if file_ext(m.name) in _MEMBER_DANGEROUS]
+            if bad:
+                more = " (+" + str(len(bad) - 3) + ")" if len(bad) > 3 else ""
+                out.append(Indicator("archive_dangerous_member", "attachment", "high", 18,
+                    att.filename + ": arsivin icinde calistirilabilir dosya: "
+                    + ", ".join(n[:60] for n in bad[:3]) + more,
+                    "Arsiv, uzantiya bakan filtrelerden program/betik gecirmenin en "
+                    "yaygin yoludur; ic dosya adi arsiv dizininden okundu, dosya cikarilmadi."))
+            if any(m.encrypted for m in members):
+                out.append(Indicator("archive_encrypted", "attachment", "medium", 8,
+                    att.filename + ": parola korumali arsiv",
+                    "Sifreli arsivin icini hicbir tarayici goremez; parola cogu zaman "
+                    "mailin govdesinde yazilidir. Bordro/KVKK paylasimlarinda da kullanilir."))
+
+        # --- OOXML: what the document loads by itself when opened ---
+        if members and documents.is_office_package(members):
+            remote = [t for kind, t in documents.ooxml_external(data)
+                      if kind in _AUTOLOAD_RELS and _REMOTE_TARGET.search(t)]
+            if remote:
+                out.append(Indicator("remote_template", "attachment", "high", 18,
+                    att.filename + ": belge acilinca uzaktan sablon/nesne yukluyor: "
+                    + remote[0][:120],
+                    "Belgenin kendisi temiz gorunur; zararli makro ya da nesne, belge "
+                    "acildigi an bu adresten indirilir (template injection)."))
+
         # --- Office macros ---
         # Being an OLE file is not having a macro: every .doc/.xls/.ppt saved
         # before 2007 - and every .msg - is one. The container has to actually
@@ -191,10 +232,15 @@ def run(email, online=False, ctx=None):
 
         # --- PDF active content ---
         if ext == "pdf" or data[:5] == b"%PDF-":
-            scripts = [desc for rx, desc in _PDF_SCRIPT if rx.search(data)]
-            triggers = [desc for rx, desc in _PDF_TRIGGER if rx.search(data)]
-            embedded = bool(_PDF_EMBEDDED.search(data))
-            if _PDF_LAUNCH.search(data):
+            # Modern writers deflate ordinary objects into object streams; the
+            # names below are searched there too, or one "save as PDF 1.5"
+            # would hide every one of them.
+            packed = documents.pdf_object_streams(data)
+            pdf = data + b"\n" + packed if packed else data
+            scripts = [desc for rx, desc in _PDF_SCRIPT if rx.search(pdf)]
+            triggers = [desc for rx, desc in _PDF_TRIGGER if rx.search(pdf)]
+            embedded = bool(_PDF_EMBEDDED.search(pdf))
+            if _PDF_LAUNCH.search(pdf):
                 out.append(Indicator("pdf_launch_action", "attachment", "high", 20,
                     att.filename + ": PDF /Launch ile harici program calistirmaya calisiyor",
                     "/Launch acilista disaridan komut/dosya calistirabilir."))

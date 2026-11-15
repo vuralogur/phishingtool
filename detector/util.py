@@ -129,6 +129,32 @@ def strip_invisible(s: str) -> str:
     return _INVISIBLE.sub("", s or "")
 
 
+def link_origin(link) -> str:
+    """Evidence prefix for a link that was found inside an attachment.
+
+    Without it a finding names an address the reader cannot find anywhere in
+    the mail body - because it is in the PDF.
+    """
+    source = getattr(link, "source", "")
+    return "Ek '" + source + "' icindeki link - " if source else ""
+
+
+def clean_filename(name: str) -> str:
+    """A file name as the operating system will treat it.
+
+    Windows drops trailing dots and spaces - "fatura.exe." is saved and run as
+    fatura.exe - and zero-width or direction-override characters are invisible
+    to the reader but would otherwise sit inside the "extension".
+    """
+    return strip_invisible(name or "").rstrip(". \t")
+
+
+def file_ext(name: str) -> str:
+    """Lowercase extension of a file name or archive path ("" when none)."""
+    base = clean_filename(name).replace("\\", "/").rsplit("/", 1)[-1]
+    return base.rsplit(".", 1)[-1].strip().lower() if "." in base else ""
+
+
 def skeleton(s: str) -> str:
     """What a string LOOKS like, as lowercase ASCII - for comparison only.
 

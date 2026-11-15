@@ -342,7 +342,7 @@ taşıdığını anlatır ve sıradan posta altyapısı bunları üretmez:
 
 `url_shortener`, `suspicious_tld`, `punycode_domain`, `at_in_url`,
 `tld_swap_domain`, `macro_document`, `mime_extension_mismatch`,
-`content_extension_mismatch`, `qr_code_url`,
+`content_extension_mismatch`, `archive_encrypted`, `qr_code_url`,
 `meta_refresh_redirect`, `base_tag_href`, `hidden_iframe`, `obfuscated_script`
 
 Kural: gönderen **DMARC pass değilse** ve en az **2 farklı** taşıyıcı sinyal
@@ -483,6 +483,26 @@ ve `html_attachment_script` (betikle yönlendirme, meta-refresh, gizlenmiş beti
 SVG içinde betik/olay işleyici). Dosya başına **tek** bulgu çıkar; form varsa o
 raporlanır. Betiksiz HTML rapor ve düz SVG çizim bulgu üretmez.
 
+**Kapsayıcı yapısı** (`detector/documents.py`) — ekin içine bakmadan görülemeyen
+üç şey; hiçbiri için dosya çıkarılmaz ya da çalıştırılmaz:
+
+- **ZIP dizini.** `archive_dangerous_member` (sert): arşivin dosya listesinde
+  çalıştırılabilir/betik dosya ya da disk imajı (`fatura.zip` içinde
+  `fatura.pdf.exe`). `archive_encrypted` (yumuşak): parola korumalı arşiv —
+  ZIP şifrelemesi dosya adlarını gizlemez, ikisi birlikte de çıkabilir.
+  `.docx`/`.odt` gibi "içi ZIP olan" belgeler arşiv sayılmaz.
+- **Uzak şablon.** `remote_template` (sert): belge açıldığı an uzak adresten
+  şablon/nesne yükleyen OOXML (template injection). Word'ün hemen her belgeye
+  yazdığı yerel şablon yolu (`file:///C:/…/Normal.dotm`) bulgu değildir.
+- **PDF nesne akışları.** PDF 1.5'ten beri bağlantılar ve `/JavaScript` adları
+  sıkıştırılmış `/ObjStm` akışlarında durabilir; mevcut PDF kontrolleri artık
+  oraya da bakar.
+
+**Ek içindeki linkler.** PDF `/URI` bağlantıları, `.docx` köprüleri ve HTML/SVG
+ekteki `href`/`form action` adresleri gövdedeki linklerle aynı URL
+kontrollerinden geçer ve IOC listesine girer. Bulgu satırı adresin nereden
+geldiğini yazar: `Ek 'fatura.pdf' icindeki link - paypa1.com ~ paypal.com`.
+
 **QR / quishing (Tier 2)** — `qr_code_url`, `qr_suspicious_url`
 (OpenCV veya pyzbar backend'i kuruluysa).
 
@@ -570,14 +590,17 @@ seçenekler ve açıklamaları: [`config.example.toml`](config.example.toml).
   DNS/WHOIS/API çağrısı yapılmaz.
 - **İtibar sorgusu** (`--online` + `VT_API_KEY`) yalnızca **domain adlarını**
   VirusTotal'a gönderir; e-posta içeriği gönderilmez.
-- Ekler/bağlantılar **hiçbir zaman açılmaz veya çalıştırılmaz** — sadece meta veri
-  ve metin incelenir.
+- Bağlantılar **hiçbir zaman ziyaret edilmez**; ekler **hiçbir zaman
+  çalıştırılmaz, bir uygulamayla açılmaz, diske çıkarılmaz**. Kapsayıcıların
+  yalnız **yapısı** bellekte ve boyut sınırıyla okunur: ZIP'in dosya listesi
+  (üyeler çıkarılmaz), `.docx`/`.xlsx`'in ilişki dosyaları (`*.rels`), PDF'in
+  nesne akışları. Hepsi tek modülde: `detector/documents.py`.
 - Analiz edilen e-posta yerelde kalır.
 
 ## Testler
 
 ```bash
-python -m pytest -q      # 574 test
+python -m pytest -q      # 623 test
 ```
 
 Her push ve PR'da GitHub Actions bunları çalıştırır: **opsiyonel bağımlılık
@@ -666,8 +689,9 @@ Gerektirir: `pip install dkimpy pyspf dnspython`
 
 ### Saldırı vektörleri (Tier 2)
 
-Statik derin analiz — dosya/bağlantı **hiçbir zaman açılmaz/çalıştırılmaz**, sadece
-içeriği ayrıştırılır:
+Statik derin analiz — bağlantı **hiçbir zaman ziyaret edilmez**, dosya **hiçbir
+zaman çalıştırılmaz ya da diske çıkarılmaz**; içerik ve kapsayıcı yapısı bellekte
+ayrıştırılır:
 
 - **HTML adli** — gövdedeki oturum formunun harici sunucuya POST etmesi,
   parola alanı, `meta`-refresh yönlendirme, `<base>` hilesi, gizli iframe,

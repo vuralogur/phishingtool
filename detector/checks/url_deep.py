@@ -20,7 +20,7 @@ from urllib.parse import urlparse, parse_qs
 
 from ..indicators import Indicator
 from ..util import (CONFUSABLES as _CONFUSABLES, ascii_fold, domain_of_address,
-                    registered_domain, is_ip)
+                    link_origin, registered_domain, is_ip)
 
 _REDIRECT_PARAMS = {"url", "redirect", "redir", "next", "return", "returnurl",
                     "dest", "destination", "continue", "goto", "target", "u", "r"}
@@ -147,6 +147,7 @@ def run(email, online=False, ctx=None):
         if not host or is_ip(host):
             continue
         rdom, sld, sub = parts(host)
+        where = link_origin(link)
         # The sender's own click-tracker / redirect infrastructure - not an attack.
         first_party = bool(from_rdom) and rdom == from_rdom
 
@@ -159,11 +160,11 @@ def run(email, online=False, ctx=None):
             for key, vals in qs.items():
                 if key.lower() in _REDIRECT_PARAMS and any(re.search(r"https?", v, re.I) or "%3a" in v.lower() for v in vals):
                     add(Indicator("open_redirect", "url", "medium", 10,
-                        host + " acik yonlendirme: parametre '" + key + "' baska URL tasiyor",
+                        where + host + " acik yonlendirme: parametre '" + key + "' baska URL tasiyor",
                         "Guvenilir domain, kurbani parametredeki adrese yonlendirmek icin kullaniliyor."))
                     break
 
-        brand_checks(host, rdom, sld, sub)
+        brand_checks(host, rdom, sld, sub, where)
 
         # --- DGA / random-looking host label ---
         # The digit cap keeps numeric infrastructure labels (cdn-000123456789,
@@ -174,7 +175,7 @@ def run(email, online=False, ctx=None):
             vowels = sum(c in "aeiou" for c in sld)
             if vowels / len(sld) < 0.3:
                 add(Indicator("random_host", "url", "low", 6,
-                    "Rastgele/algoritmik gorunumlu host: " + sld,
+                    where + "Rastgele/algoritmik gorunumlu host: " + sld,
                     "Yuksek entropili, sesli harfsiz host adlari DGA/tek kullanimlik phishing altyapisina isaret eder."))
 
     # The sender's own domain gets the same brand questions as a link. A mail

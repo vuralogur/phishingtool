@@ -51,6 +51,9 @@ SOFT_IDS = {
     # renamed archive or a page saved under the wrong name is sloppy far more
     # often than hostile. (An executable behind a document name is hard.)
     "content_extension_mismatch",
+    # A password-protected archive: the standard way to walk malware past a
+    # scanner, and the standard way to mail payroll. Not evidence alone.
+    "archive_encrypted",
     # html quirks marketing HTML also produces
     "meta_refresh_redirect", "base_tag_href", "hidden_iframe", "hidden_text",
     "obfuscated_script",
@@ -107,7 +110,7 @@ STACK_IDS = frozenset({
     "url_shortener", "suspicious_tld", "punycode_domain", "at_in_url",
     "tld_swap_domain",
     "macro_document", "mime_extension_mismatch", "content_extension_mismatch",
-    "qr_code_url",
+    "archive_encrypted", "qr_code_url",
     "meta_refresh_redirect", "base_tag_href", "hidden_iframe",
     "obfuscated_script",
 })

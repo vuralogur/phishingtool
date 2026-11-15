@@ -36,6 +36,7 @@ NAMES = {
     "T1056.003": "Input Capture: Web Portal Capture",
     "T1059.005": "Command and Scripting Interpreter: Visual Basic",
     "T1204.001": "User Execution: Malicious Link",
+    "T1221": "Template Injection",
     "T1204.002": "User Execution: Malicious File",
     "T1566": "Phishing",
     "T1566.001": "Phishing: Spearphishing Attachment",
@@ -110,6 +111,11 @@ TECHNIQUES = {
     "dangerous_attachment": "T1566.001",
     "macro_document": "T1566.001",
     "archive_attachment": "T1566.001",
+    "archive_dangerous_member": "T1566.001",
+    # A password on the archive keeps every scanner out of it.
+    "archive_encrypted": "T1027",
+    # The document is clean; what it downloads on open is not.
+    "remote_template": "T1221",
 
     # The attachment lies about what it is.
     "double_extension": "T1036.007",

@@ -16,8 +16,13 @@ risk skoru üretir (`low` / `medium` / `high` / `critical`). Türkçe arayüz/ç
 
 - Bu bir **saldırı / kimlik-hasadı (credential harvesting) aracı DEĞİLDİR** ve
   öyle bir şeye dönüştürülmeyecek.
-- **Statik analiz** — link/ek **asla açılmaz, çalıştırılmaz, çözülmez**. Sadece
-  içerik ayrıştırılır.
+- **Statik analiz** — link **asla ziyaret edilmez**; ek **asla çalıştırılmaz,
+  bir uygulamayla açılmaz/render edilmez, diske çıkarılmaz**. Yalnız içerik
+  ayrıştırılır. Kapsayıcıların **yapısı** okunabilir (kullanıcı onayı:
+  2026-11-15), tamamı `detector/documents.py` içinde, bellekte ve boyut
+  sınırıyla: ZIP **dizini** (dosya adları + şifreli bayrağı; üye çıkarılmaz),
+  OOXML'in yalnız `*.rels` dosyaları, PDF'in yalnız `/ObjStm` akışları. Bunun
+  ötesi (üye çıkarma, makro/betik çalıştırma, sayfa render) sınırın dışındadır.
 - **Ağ işlemleri opt-in** — DNS/WHOIS/itibar/canlı SPF-DKIM-DMARC yalnızca
   `--online` ile. Varsayılan tamamen çevrimdışı.
 - Analiz edilen e-posta **yerelde kalır**. İtibar sorguları yalnızca **domain**
@@ -47,7 +52,7 @@ python -m detector.cli bench corpus/ [--threshold high] [--json]
 # GUI
 python run_gui.py
 # testler
-python -m pytest -q      # 574 test (CI: 3.11–3.14 Linux + 3.12 Windows)
+python -m pytest -q      # 623 test (CI: 3.11–3.14 Linux + 3.12 Windows)
 ```
 
 ## Mimari
@@ -71,6 +76,19 @@ python -m pytest -q      # 574 test (CI: 3.11–3.14 Linux + 3.12 Windows)
   imza parçaları (`_SIGNATURE_TYPES`) hariç. Multipart olmayan mailin kendisi de
   dosya olabilir. `Attachment.clean_name` = OS'un göreceği ad (sondaki nokta/
   boşluk ve görünmez karakterler atılır); `ext` ondan türetilir.
+  `links` ek **içindeki** linkleri de taşır (`_attachment_links`): HTML/SVG ek
+  (`_extract_links`), PDF `/URI`, OOXML `hyperlink` ilişkisi. `Link.source` =
+  ek adı ("" = gövde); `util.link_origin()` kanıt satırına "Ek 'x.pdf'
+  icindeki link - " önekini koyar. Gövdede zaten olan adres tekrar eklenmez.
+  URL kontrolleri ve IOC listesi bunları kendiliğinden görür.
+- `detector/documents.py` — kapsayıcı **yapısı** (etik sınırdaki istisnanın
+  tek yeri). `zip_members()` (merkezi dizin → `Member(name, encrypted, size)`,
+  `None` = okunamadı), `is_office_package()` (OOXML/ODF), `ooxml_external()`
+  (`(kind, target)`; yalnız `TargetMode="External"`), `pdf_object_streams()`
+  (yalnız `/Type /ObjStm` + `/FlateDecode`), `pdf_urls()`, `markup_text()`.
+  Her okuma `MAX_*` sabitleriyle sınırlı (bomba = sınırlı bellek, sonra durur);
+  okunamayan dosya = "bulgu yok", exception yok. `lru_cache`'li: parser ve
+  check aynı eki iki kez açmaz.
 - `detector/filetype.py` — `sniff(data) -> kind` (`exe|ole|zip|image|archive|
   rtf|pdf|html|svg|""`) + `LABELS`. Yalnız ilk baytların imza karşılaştırması;
   açma/çözme yok. Tanınmayan = `""` = "bulgu yok" (tahmin etmez; "MZ" tek
@@ -161,7 +179,7 @@ python -m pytest -q      # 574 test (CI: 3.11–3.14 Linux + 3.12 Windows)
 | `checks/content.py` | `urgency_language`, `credential_request`, `generic_greeting`, `brand_impersonation` | brand_imp **kimlik-temelli** (aşağıda) |
 | `checks/html_forensics.py` | **Tier 2**: harici form POST (`formaction` dahil), parola alanı, meta-refresh, `<base>`, gizli iframe, gizli metin, obfuscated JS, `active_content_link` (`javascript:`/`vbscript:`/`data:` href; `void(0)` ve `data:image` hariç) | stdlib |
 | `checks/attachments.py` | `double_extension`, `dangerous_attachment`, `macro_document`, arşiv, MIME uyuşmazlığı, `disguised_executable` (sert: içerik exe, ad değil), `content_extension_mismatch` (yumuşak, `CONTENT_EXPECT`) | ad + MIME + içerik imzası (`filetype.sniff`); bayt/MIME aynı eki yalanlıyorsa **tek** bulgu |
-| `checks/attachment_deep.py` | **Tier 2**: `html_smuggling`, `macro_detected/autoexec`, `pdf_active_content`, `pdf_launch_action`, HTML/SVG ek = sayfa (`_page`): `html_attachment_form` (sert 16) **ya da** `html_attachment_script` (sert 14) | içeriğe göre; oletools opsiyonel. Sayfa okuması `html_forensics.scan()` ile; dosya başına **tek** bulgu (form kazanır) — meşru "güvenli mesaj" HTML ekleri critical'a çıkmasın |
+| `checks/attachment_deep.py` | **Tier 2**: `html_smuggling`, `macro_detected/autoexec`, `pdf_active_content`, `pdf_launch_action`, HTML/SVG ek = sayfa (`_page`): `html_attachment_form` (sert 16) **ya da** `html_attachment_script` (sert 14); ZIP dizini: `archive_dangerous_member` (sert 18; `DANGEROUS` − sayfa uzantıları + disk imajları), `archive_encrypted` (yumuşak 8, taşıyıcı); OOXML: `remote_template` (sert 18; `attachedTemplate`/`oleObject`/`frame`/`subDocument` + **uzak** hedef — Word'ün yerel `file:///C:/…` şablon kaydı değil); PDF adları `/ObjStm` içinde de aranır | içeriğe göre; oletools opsiyonel. Sayfa okuması `html_forensics.scan()` ile; dosya başına **tek** bulgu (form kazanır) — meşru "güvenli mesaj" HTML ekleri critical'a çıkmasın |
 | `checks/qr.py` | **Tier 2** quishing: resim/`data:` içindeki QR çözüp URL denetler | opencv veya pyzbar opsiyonel; yoksa sessiz atlar |
 | `reputation.py` | `vt_flagged` (VirusTotal) | online + `VT_API_KEY` |
 

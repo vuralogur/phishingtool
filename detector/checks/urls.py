@@ -4,7 +4,7 @@ import re
 from urllib.parse import urlparse
 
 from ..indicators import Indicator
-from ..util import (canonical_ip, domain_of_address, has_non_ascii,
+from ..util import (canonical_ip, domain_of_address, has_non_ascii, link_origin,
                     looks_like_domain, lookalike_distance, registered_domain)
 
 SHORTENERS = {
@@ -99,6 +99,7 @@ def run(email, online=False, ctx=None):
         if not host:
             continue
         rdom = registered_domain(host)
+        where = link_origin(link)
 
         # Anchor text implies one domain, href points somewhere else.
         # looks_like_domain: anchor text such as "Ltd.Sti" or "dosya.pdf" matches
@@ -118,7 +119,7 @@ def run(email, online=False, ctx=None):
                 # text. Still fire when the text names a *different* brand.
                 if not first_party and not (shows_own and authed):
                     add(Indicator("anchor_href_mismatch", "url", "high", 20,
-                        "metin '" + m.group(0) + "' -> gercek hedef " + host,
+                        where + "metin '" + m.group(0) + "' -> gercek hedef " + host,
                         "Gorunen link ile tiklaninca gidilen adres farkli - klasik phishing."))
 
         ip = canonical_ip(host)
@@ -127,26 +128,26 @@ def run(email, online=False, ctx=None):
             # browser. Show what it resolves to - the odd spelling is the point.
             disguised = ip != host
             add(Indicator("ip_url", "url", "high", 14,
-                "Baglanti dogrudan IP adresi: " + host
+                where + "Baglanti dogrudan IP adresi: " + host
                 + (" (= " + ip + ")" if disguised else ""),
                 "Mesru kurumlar linklerde ciplak IP kullanmaz."
                 + (" Adres ondalik/hex/sekizlik yazilarak IP oldugu gizlenmis."
                    if disguised else "")))
         if "@" in _authority(link.href):
             add(Indicator("at_in_url", "url", "medium", 10,
-                "URL yetki kisminda '@': " + link.href,
+                where + "URL yetki kisminda '@': " + link.href,
                 "'@' oncesi kisim yok sayilir; gercek host gizlenir."))
         if rdom in SHORTENERS:
             add(Indicator("url_shortener", "url", "medium", 8,
-                "URL kisaltici: " + rdom,
+                where + "URL kisaltici: " + rdom,
                 "Kisaltici gercek hedefi gizler."))
         if host.count(".") >= 4:
             add(Indicator("excessive_subdomains", "url", "low", 6,
-                "Asiri subdomain: " + host,
+                where + "Asiri subdomain: " + host,
                 "Marka adini subdomain'e gomerek mesru gosterme taktigi."))
 
         if not ip:
-            domain_checks(host, rdom)
+            domain_checks(host, rdom, where)
 
     # The sender's own domain is asked the same questions. A typosquat used only
     # as the From address (noreply@paypa1.com, no link to it) never met a URL

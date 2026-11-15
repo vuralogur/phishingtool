@@ -8,9 +8,10 @@ from html.parser import HTMLParser
 from pathlib import Path
 import re
 
+from . import documents
 from . import msg as _msg
-from .util import (domain_of_address, looks_like_domain, strip_invisible,
-                   strip_url_noise)
+from .util import (clean_filename, domain_of_address, file_ext,
+                   looks_like_domain, strip_url_noise)
 
 _URL_RE = re.compile(r"""https?://[^\s"'<>)\]]+""", re.IGNORECASE)
 # A URL typed without a scheme ("www.x.com", "x.com/login"). Mail clients turn
@@ -37,6 +38,7 @@ MAIL_GLOBS = ("*.eml", "*.msg")
 class Link:
     text: str
     href: str
+    source: str = ""   # attachment the link was found in; "" = the mail body
 
 
 @dataclass
@@ -48,18 +50,12 @@ class Attachment:
 
     @property
     def clean_name(self) -> str:
-        """The name as the operating system will treat it.
-
-        Windows drops trailing dots and spaces - "fatura.exe." is saved and run
-        as fatura.exe - and zero-width or direction-override characters are
-        invisible to the reader but would otherwise sit inside the "extension".
-        """
-        return strip_invisible(self.filename or "").rstrip(". \t")
+        """The name as the operating system will treat it (util.clean_filename)."""
+        return clean_filename(self.filename)
 
     @property
     def ext(self) -> str:
-        name = self.clean_name
-        return name.rsplit(".", 1)[-1].strip().lower() if "." in name else ""
+        return file_ext(self.filename)
 
 
 @dataclass
@@ -222,6 +218,56 @@ def _extract_links(html: str, text: str) -> list:
     return links
 
 
+_PAGE_EXT = {"html", "htm", "shtml", "xhtml", "xht", "svg"}
+_PAGE_TYPES = {"text/html", "application/xhtml+xml", "image/svg+xml"}
+_MAX_ATTACHMENT_LINKS = 300
+
+
+def _web_url(value: str) -> str:
+    """A URL found in a document, as a web link - or "" (mailto:, file paths)."""
+    web = normalize_href(value)
+    if not web and value.lower().startswith("www."):
+        web = "http://" + value
+    return web
+
+
+def _attachment_links(attachments, seen) -> list:
+    """Links that live inside attachments instead of the body.
+
+    Moving the link into a PDF, a .docx or an attached page is the cheapest way
+    to keep it away from every URL check; the reader clicks it all the same.
+    Structure is read, nothing is opened or run (see ``detector.documents``).
+    Each link remembers its file in ``Link.source`` so a finding can say where
+    the address came from.
+    """
+    out = []
+    for att in attachments:
+        data = att.payload or b""
+        if not data:
+            continue
+        ext = att.ext
+        ctype = (att.content_type or "").lower()
+        if ext in _PAGE_EXT or ctype in _PAGE_TYPES:
+            found = _extract_links(documents.markup_text(data), "")
+        elif ext == "pdf" or b"%PDF-" in data[:1024]:
+            found = [Link(text="", href=_web_url(u)) for u in documents.pdf_urls(data)]
+        elif data[:2] == b"PK":
+            found = [Link(text="", href=_web_url(target))
+                     for kind, target in documents.ooxml_external(data)
+                     if kind == "hyperlink"]
+        else:
+            continue
+        kept = 0
+        for link in found:
+            if not link.href or link.href in seen or kept >= _MAX_ATTACHMENT_LINKS:
+                continue
+            seen.add(link.href)
+            link.source = att.filename
+            out.append(link)
+            kept += 1
+    return out
+
+
 def _headers_map(msg) -> dict:
     out = {}
     for k, v in msg.items():
@@ -328,6 +374,9 @@ def _build(msg, raw: str, raw_bytes: bytes,
     auth = [str(x) for x in (msg.get_all("Authentication-Results", []) or [])]
     spf_received = [str(x) for x in (msg.get_all("Received-SPF", []) or [])]
     text_body, html_body = _bodies(msg)
+    attachments = _attachments(msg)
+    links = _extract_links(html_body, text_body)
+    links += _attachment_links(attachments, {l.href for l in links})
     return ParsedEmail(
         raw=raw,
         raw_bytes=raw_bytes,
@@ -345,8 +394,8 @@ def _build(msg, raw: str, raw_bytes: bytes,
         spf_received=spf_received,
         text_body=text_body,
         html_body=html_body,
-        links=_extract_links(html_body, text_body),
-        attachments=_attachments(msg),
+        links=links,
+        attachments=attachments,
         source_format=source_format,
         header_source=header_source,
     )
